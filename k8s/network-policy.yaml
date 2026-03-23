@@ -1,0 +1,230 @@
+# ╔══════════════════════════════════════════════════════════════════════╗
+# ║  Network policies follow a deny-all baseline + explicit allow rules.     ║
+# ║  Apply this file BEFORE deploying services.                               ║
+# ╚══════════════════════════════════════════════════════════════════════╝
+
+# ── 1. Default: deny all ingress + egress in the namespace ────────────────
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: mortalbook
+spec:
+  podSelector: {} # applies to every pod
+  policyTypes:
+    - Ingress
+    - Egress
+---
+# ── 2. Allow DNS egress for all pods (required for service discovery) ────
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns-egress
+  namespace: mortalbook
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+---
+# ── 3. Allow ingress-nginx controller → frontend ────────────────────────
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-to-frontend
+  namespace: mortalbook
+spec:
+  podSelector:
+    matchLabels:
+      app: frontend
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - port: 3000
+---
+# ── 4. Allow ingress-nginx controller → admin-panel ────────────────────
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-to-admin-panel
+  namespace: mortalbook
+spec:
+  podSelector:
+    matchLabels:
+      app: admin-panel
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - port: 8080
+---
+# ── 5. Allow ingress-nginx → memorial-service (HTTP + gRPC) ─────────────
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-to-memorial-service
+  namespace: mortalbook
+spec:
+  podSelector:
+    matchLabels:
+      app: memorial-service
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+        - podSelector:
+            matchLabels:
+              app: admin-service # admin-service calls gRPC internally
+      ports:
+        - port: 8080
+        - port: 50001
+---
+# ── 6. Allow ingress-nginx → admin-service ──────────────────────────
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-to-admin-service
+  namespace: mortalbook
+spec:
+  podSelector:
+    matchLabels:
+      app: admin-service
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - port: 5002
+---
+# ── 7. Allow microservices → PostgreSQL ──────────────────────────────
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-services-to-postgres
+  namespace: mortalbook
+spec:
+  podSelector:
+    matchLabels:
+      app: postgres
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: memorial-service
+        - podSelector:
+            matchLabels:
+              app: admin-service
+      ports:
+        - port: 5432
+---
+# ── 8. Allow microservices → Redis ──────────────────────────────────
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-services-to-redis
+  namespace: mortalbook
+spec:
+  podSelector:
+    matchLabels:
+      app: redis
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: memorial-service
+        - podSelector:
+            matchLabels:
+              app: admin-service
+      ports:
+        - port: 6379
+---
+# ── 9. Allow microservices → Kafka ──────────────────────────────────
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-services-to-kafka
+  namespace: mortalbook
+spec:
+  podSelector:
+    matchLabels:
+      app: kafka
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: memorial-service
+        - podSelector:
+            matchLabels:
+              app: admin-service
+      ports:
+        - port: 9092
+        - port: 29092
+---
+# ── 10. Allow microservices egress to infrastructure ────────────────────
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-microservices-egress
+  namespace: mortalbook
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app
+        operator: In
+        values:
+          - memorial-service
+          - admin-service
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: postgres
+      ports:
+        - port: 5432
+    - to:
+        - podSelector:
+            matchLabels:
+              app: redis
+      ports:
+        - port: 6379
+    - to:
+        - podSelector:
+            matchLabels:
+              app: kafka
+      ports:
+        - port: 9092
+        - port: 29092
+    - to:
+        - podSelector:
+            matchLabels:
+              app: memorial-service # admin-service → memorial-service gRPC
+      ports:
+        - port: 50001

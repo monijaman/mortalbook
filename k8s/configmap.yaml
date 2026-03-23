@@ -1,0 +1,111 @@
+# ── Shared platform config consumed by all microservices ───────────────────
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+  namespace: mortalbook
+  labels:
+    app.kubernetes.io/part-of: mortalbook
+    app.kubernetes.io/component: config
+data:
+  # Application
+  APP_ENV: "production"
+  LOG_LEVEL: "info"
+  LOG_FORMAT: "json"
+
+  # PostgreSQL
+  DB_HOST: "postgres"
+  DB_PORT: "5432"
+  DB_NAME: "mortalbook_db"
+
+  # Redis
+  REDIS_HOST: "redis"
+  REDIS_PORT: "6379"
+  REDIS_DB: "0"
+
+  # Kafka
+  KAFKA_BROKERS: "kafka:9092"
+  KAFKA_MEMORIAL_TOPIC: "memorial-events"
+
+  # Service discovery (Kubernetes DNS)
+  MEMORIAL_GRPC_ADDR: "memorial-service:50001"
+  ADMIN_SERVICE_URL: "http://admin-service:5002"
+  MEMORIAL_SERVICE_URL: "http://memorial-service:8080"
+---
+# ── memorial-service specific config ───────────────────────────────────────
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: memorial-service-config
+  namespace: mortalbook
+  labels:
+    app: memorial-service
+    app.kubernetes.io/part-of: mortalbook
+data:
+  APP_ENV: "production"
+  PORT: "8080"
+  GRPC_PORT: "50001"
+  DB_HOST: "postgres"
+  DB_PORT: "5432"
+  DB_NAME: "mortalbook_db"
+  REDIS_HOST: "redis"
+  REDIS_PORT: "6379"
+  REDIS_DB: "0"
+  REDIS_CACHE_TTL: "300"
+  REDIS_DAILY_CACHE_TTL: "600"
+  KAFKA_BROKERS: "kafka:9092"
+  KAFKA_MEMORIAL_TOPIC: "memorial-events"
+  LOG_LEVEL: "info"
+  LOG_FORMAT: "json"
+---
+# ── admin-service specific config ──────────────────────────────────────────
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: admin-service-config
+  namespace: mortalbook
+  labels:
+    app: admin-service
+    app.kubernetes.io/part-of: mortalbook
+data:
+  APP_ENV: "production"
+  PORT: "5002"
+  DB_HOST: "postgres"
+  DB_PORT: "5432"
+  DB_NAME: "mortalbook_db"
+  REDIS_HOST: "redis"
+  REDIS_PORT: "6379"
+  REDIS_DB: "0"
+  KAFKA_BROKERS: "kafka:9092"
+  KAFKA_MEMORIAL_TOPIC: "memorial-events"
+  MEMORIAL_GRPC_ADDR: "memorial-service:50001"
+  RATE_LIMIT_REQUESTS: "10"
+  RATE_LIMIT_WINDOW_SECONDS: "60"
+  LOG_LEVEL: "info"
+---
+# ── frontend specific config ────────────────────────────────────────────────
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: frontend-config
+  namespace: mortalbook
+  labels:
+    app: frontend
+    app.kubernetes.io/part-of: mortalbook
+data:
+  PORT: "3000"
+  NEXT_PUBLIC_API_URL: "https://mortalbook.example.com/api/v1"
+  NEXT_PUBLIC_ADMIN_API_URL: "https://admin.mortalbook.example.com/api/v1"
+---
+# ── admin-panel specific config ─────────────────────────────────────────────
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: admin-panel-config
+  namespace: mortalbook
+  labels:
+    app: admin-panel
+    app.kubernetes.io/part-of: mortalbook
+data:
+  VUE_APP_API_URL: "https://admin.mortalbook.example.com/api/v1"
+  VUE_APP_MEMORIAL_API_URL: "https://mortalbook.example.com/api/v1"

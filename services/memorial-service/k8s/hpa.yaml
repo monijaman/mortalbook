@@ -1,0 +1,58 @@
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: memorial-service-hpa
+  namespace: mortalbook
+  labels:
+    app: memorial-service
+    app.kubernetes.io/name: memorial-service
+    app.kubernetes.io/component: backend
+    app.kubernetes.io/part-of: mortalbook
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: memorial-service
+
+  # Scaling bounds
+  minReplicas: 2 # always ≥ 2 for HA
+  maxReplicas: 10
+
+  metrics:
+    # ── Scale on CPU (primary trigger) ──────────────────────────────────────
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 60 # scale out when avg CPU > 60 %
+
+    # ── Scale on memory (secondary trigger) ─────────────────────────────────
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 75 # scale out when avg memory > 75 %
+
+  behavior:
+    # ── Scale OUT: fast to handle traffic spikes ─────────────────────────────
+    scaleUp:
+      stabilizationWindowSeconds: 30 # evaluate for 30 s before acting
+      policies:
+        - type: Pods
+          value: 2
+          periodSeconds: 30 # add up to 2 pods every 30 s
+        - type: Percent
+          value: 100
+          periodSeconds: 60 # or double pod count per minute
+      selectPolicy: Max # whichever policy adds more pods
+
+    # ── Scale IN: slow to avoid thrashing ────────────────────────────────────
+    scaleDown:
+      stabilizationWindowSeconds: 300 # evaluate for 5 min before scaling in
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 120 # remove at most 1 pod per 2 min
+      selectPolicy: Min

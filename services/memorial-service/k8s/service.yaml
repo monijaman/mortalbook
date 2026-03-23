@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: memorial-service
+  namespace: mortalbook
+  labels:
+    app: memorial-service
+    app.kubernetes.io/name: memorial-service
+    app.kubernetes.io/component: backend
+    app.kubernetes.io/part-of: mortalbook
+spec:
+  type: ClusterIP
+  selector:
+    app: memorial-service
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP
+    - name: grpc
+      port: 50001
+      targetPort: grpc
+      protocol: TCP
+  # Session affinity not needed for stateless services
+  sessionAffinity: None

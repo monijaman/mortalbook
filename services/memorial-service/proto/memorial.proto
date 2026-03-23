@@ -1,0 +1,69 @@
+syntax = "proto3";
+
+package memorial.v1;
+
+option go_package = "github.com/yourusername/mortalbook/memorial-service/gen/memorial/v1";
+
+import "google/protobuf/timestamp.proto";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Domain messages
+// ─────────────────────────────────────────────────────────────────────────────
+
+message Memorial {
+  string id             = 1;
+  string name           = 2;
+  string date_of_birth  = 3; // RFC-3339 date string  (2024-01-15)
+  string date_of_death  = 4;
+  string biography      = 5;
+  string created_by     = 6;
+  string status         = 7; // active | archived
+  google.protobuf.Timestamp created_at = 8;
+  google.protobuf.Timestamp updated_at = 9;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GetDailyMemorials RPC
+// ─────────────────────────────────────────────────────────────────────────────
+
+message GetDailyMemorialsRequest {
+  // date in "YYYY-MM-DD" format — returns memorials whose date_of_death falls
+  // on this calendar day (any year).
+  string date  = 1;
+  int32  limit = 2; // max records to return (default 50)
+  int32  page  = 3; // 1-based page number (default 1)
+}
+
+message GetDailyMemorialsResponse {
+  repeated Memorial memorials = 1;
+  int64             total     = 2;
+  int32             page      = 3;
+  int32             limit     = 4;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// UpdateMemorial RPC
+// ─────────────────────────────────────────────────────────────────────────────
+
+message UpdateMemorialRequest {
+  string id        = 1;
+  string name      = 2; // optional — only fields present are updated
+  string biography = 3;
+  string status    = 4;
+}
+
+message UpdateMemorialResponse {
+  Memorial memorial = 1;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Service
+// ─────────────────────────────────────────────────────────────────────────────
+
+service MemorialService {
+  // Returns memorials whose death anniversary falls on the given date.
+  rpc GetDailyMemorials (GetDailyMemorialsRequest) returns (GetDailyMemorialsResponse);
+
+  // Partially updates a memorial and returns the updated entity.
+  rpc UpdateMemorial (UpdateMemorialRequest) returns (UpdateMemorialResponse);
+}

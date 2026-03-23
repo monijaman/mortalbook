@@ -1,0 +1,172 @@
+# Kafka StatefulSet (single-broker for dev/staging; add replicas for prod)
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: kafka
+  namespace: mortalbook
+  labels:
+    app: kafka
+    app.kubernetes.io/name: kafka
+    app.kubernetes.io/component: messaging
+    app.kubernetes.io/part-of: mortalbook
+spec:
+  serviceName: kafka-headless
+  replicas: 1 # increase to 3 for production HA (requires KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3)
+  selector:
+    matchLabels:
+      app: kafka
+  template:
+    metadata:
+      labels:
+        app: kafka
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+
+      terminationGracePeriodSeconds: 60
+
+      # Wait for ZooKeeper to be available before starting Kafka
+      initContainers:
+        - name: wait-for-zookeeper
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              until echo ruok | nc -w 2 zookeeper 2181 | grep -q imok; do
+                echo "Waiting for ZooKeeper..."; sleep 3
+              done
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+
+      containers:
+        - name: kafka
+          image: confluentinc/cp-kafka:7.5.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: external
+              containerPort: 9092
+              protocol: TCP
+            - name: internal
+              containerPort: 29092
+              protocol: TCP
+          env:
+            - name: KAFKA_BROKER_ID
+              value: "1"
+            - name: KAFKA_ZOOKEEPER_CONNECT
+              value: "zookeeper:2181"
+            - name: KAFKA_ADVERTISED_LISTENERS
+              value: "PLAINTEXT://kafka:9092,PLAINTEXT_INTERNAL://kafka:29092"
+            - name: KAFKA_LISTENER_SECURITY_PROTOCOL_MAP
+              value: "PLAINTEXT:PLAINTEXT,PLAINTEXT_INTERNAL:PLAINTEXT"
+            - name: KAFKA_INTER_BROKER_LISTENER_NAME
+              value: "PLAINTEXT_INTERNAL"
+            - name: KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR
+              value: "1"
+            - name: KAFKA_AUTO_CREATE_TOPICS_ENABLE
+              value: "true"
+            - name: KAFKA_LOG_RETENTION_HOURS
+              value: "168" # 7 days
+            - name: KAFKA_LOG_SEGMENT_BYTES
+              value: "1073741824"
+            - name: KAFKA_LOG_RETENTION_CHECK_INTERVAL_MS
+              value: "300000"
+            - name: KAFKA_HEAP_OPTS
+              value: "-Xms512m -Xmx512m"
+
+          livenessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - kafka-broker-api-versions.sh --bootstrap-server localhost:9092
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+
+          readinessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - kafka-broker-api-versions.sh --bootstrap-server localhost:9092
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 10
+            failureThreshold: 3
+
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+
+          volumeMounts:
+            - name: kafka-data
+              mountPath: /var/lib/kafka/data
+
+  volumeClaimTemplates:
+    - metadata:
+        name: kafka-data
+        labels:
+          app: kafka
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: standard
+        resources:
+          requests:
+            storage: 20Gi
+---
+# Headless service for StatefulSet DNS
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka-headless
+  namespace: mortalbook
+  labels:
+    app: kafka
+    app.kubernetes.io/part-of: mortalbook
+spec:
+  clusterIP: None
+  selector:
+    app: kafka
+  ports:
+    - name: external
+      port: 9092
+      targetPort: external
+    - name: internal
+      port: 29092
+      targetPort: internal
+---
+# ClusterIP service used by application services
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka
+  namespace: mortalbook
+  labels:
+    app: kafka
+    app.kubernetes.io/name: kafka
+    app.kubernetes.io/component: messaging
+    app.kubernetes.io/part-of: mortalbook
+spec:
+  type: ClusterIP
+  selector:
+    app: kafka
+  ports:
+    - name: external
+      port: 9092
+      targetPort: external
+      protocol: TCP
+    - name: internal
+      port: 29092
+      targetPort: internal
+      protocol: TCP

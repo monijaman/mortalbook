@@ -1,0 +1,99 @@
+name: Deploy to Production
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to deploy"
+        required: true
+        type: string
+
+env:
+  REGISTRY: ghcr.io
+  KUBE_CLUSTER: prod-cluster
+  KUBE_REGION: us-east-1
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v${{ github.event.inputs.version }}
+
+      - name: Configure kubectl
+        run: |
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.KUBE_CONFIG_PROD }}" | base64 -d > $HOME/.kube/config
+          chmod 600 $HOME/.kube/config
+
+      - name: Update image in k8s manifests
+        run: |
+          for service in memorial-service admin-service frontend admin-panel; do
+            sed -i "s|image:.*$service.*|image: ${{ env.REGISTRY }}/${{ github.repository }}/$service:v${{ github.event.inputs.version }}|g" \
+              services/$service/k8s/deployment.yaml
+          done
+
+      - name: Deploy to production with blue-green strategy
+        run: |
+          kubectl set image deployment/memorial-service \
+            memorial-service=${{ env.REGISTRY }}/${{ github.repository }}/memorial-service:v${{ github.event.inputs.version }} \
+            -n mortalbook
+
+          kubectl set image deployment/admin-service \
+            admin-service=${{ env.REGISTRY }}/${{ github.repository }}/admin-service:v${{ github.event.inputs.version }} \
+            -n mortalbook
+
+          kubectl set image deployment/frontend \
+            frontend=${{ env.REGISTRY }}/${{ github.repository }}/frontend:v${{ github.event.inputs.version }} \
+            -n mortalbook
+
+          kubectl set image deployment/admin-panel \
+            admin-panel=${{ env.REGISTRY }}/${{ github.repository }}/admin-panel:v${{ github.event.inputs.version }} \
+            -n mortalbook
+
+      - name: Wait for rollout
+        run: |
+          kubectl rollout status deployment/memorial-service -n mortalbook --timeout=5m
+          kubectl rollout status deployment/admin-service -n mortalbook --timeout=5m
+          kubectl rollout status deployment/frontend -n mortalbook --timeout=5m
+          kubectl rollout status deployment/admin-panel -n mortalbook --timeout=5m
+
+      - name: Verify deployment health
+        run: |
+          for service in memorial-service admin-service frontend admin-panel; do
+            pods=$(kubectl get pods -l app=$service -n mortalbook --no-headers | grep Running | wc -l)
+            if [ $pods -eq 0 ]; then
+              echo "No running pods for $service"
+              exit 1
+            fi
+          done
+
+      - name: Run smoke tests
+        run: |
+          kubectl run smoke-test --image=curlimages/curl --rm -i --restart=Never -- \
+            curl -f http://frontend:3000 || exit 1
+
+      - name: Create deployment notification
+        if: success()
+        uses: actions/github-script@v6
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '✅ Production deployment v${{ github.event.inputs.version }} completed successfully'
+            })
+
+      - name: Rollback on failure
+        if: failure()
+        run: |
+          kubectl rollout undo deployment/memorial-service -n mortalbook
+          kubectl rollout undo deployment/admin-service -n mortalbook
+          kubectl rollout undo deployment/frontend -n mortalbook
+          kubectl rollout undo deployment/admin-panel -n mortalbook
+          echo "Rolled back to previous version"
+          exit 1

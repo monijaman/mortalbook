@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: admin-panel
+  namespace: mortalbook
+  labels:
+    app: admin-panel
+    app.kubernetes.io/name: admin-panel
+    app.kubernetes.io/component: frontend
+    app.kubernetes.io/part-of: mortalbook
+spec:
+  type: ClusterIP
+  selector:
+    app: admin-panel
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP
+  sessionAffinity: None
+      port: 8080
+      targetPort: 8080
+      protocol: TCP

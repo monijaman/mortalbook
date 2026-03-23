@@ -1,0 +1,49 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: mortalbook
+  labels:
+    name: mortalbook
+    app.kubernetes.io/part-of: mortalbook
+    environment: production
+---
+# ── Resource Quota: cap total cluster resource usage per namespace ──────────
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: mortalbook-quota
+  namespace: mortalbook
+spec:
+  hard:
+    requests.cpu: "4"
+    requests.memory: 4Gi
+    limits.cpu: "16"
+    limits.memory: 16Gi
+    pods: "50"
+    services: "20"
+    persistentvolumeclaims: "10"
+    secrets: "30"
+    configmaps: "30"
+---
+# ── LimitRange: default limits for pods that omit resource specs ────────────
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: mortalbook-limit-range
+  namespace: mortalbook
+spec:
+  limits:
+    - type: Container
+      default:
+        cpu: 500m
+        memory: 256Mi
+      defaultRequest:
+        cpu: 100m
+        memory: 64Mi
+      max:
+        cpu: "2"
+        memory: 2Gi
+    - type: Pod
+      max:
+        cpu: "4"
+        memory: 4Gi

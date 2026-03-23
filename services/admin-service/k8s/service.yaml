@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: admin-service
+  namespace: mortalbook
+  labels:
+    app: admin-service
+    app.kubernetes.io/name: admin-service
+    app.kubernetes.io/component: backend
+    app.kubernetes.io/part-of: mortalbook
+spec:
+  type: ClusterIP
+  selector:
+    app: admin-service
+  ports:
+    - name: http
+      port: 5002
+      targetPort: http
+      protocol: TCP
+  sessionAffinity: None
+      port: 5002
+      targetPort: 5002
+      protocol: TCP
