@@ -22,7 +22,7 @@ RUN rm /etc/nginx/conf.d/default.conf
 # SPA-friendly nginx config
 RUN printf '%s\n' \
     'server {' \
-    '    listen       80;' \
+    '    listen       8080;' \
     '    server_name  _;' \
     '    root         /usr/share/nginx/html;' \
     '    index        index.html;' \
@@ -51,6 +51,6 @@ RUN printf '%s\n' \
 # Copy Vite build output (dist/)
 COPY --from=builder /app/dist /usr/share/nginx/html
 
-EXPOSE 80
+EXPOSE 8080
 
 CMD ["nginx", "-g", "daemon off;"]
