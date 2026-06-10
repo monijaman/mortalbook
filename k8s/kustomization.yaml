@@ -6,9 +6,29 @@ namespace: mortalbook
 resources:
   # 1. Namespace, quota, limits (must come first)
   - namespace.yaml
+  - vendor/infrastructure/postgres/k8s/configmap.yaml
+  - vendor/infrastructure/postgres/k8s/secret.yaml
+  - vendor/infrastructure/postgres/k8s/service.yaml
+  - vendor/infrastructure/postgres/k8s/deployment.yaml
+  - vendor/infrastructure/postgres/k8s/pvc.yaml
+  - vendor/infrastructure/redis/k8s/service.yaml
+  - vendor/infrastructure/redis/k8s/deployment.yaml
+  - vendor/infrastructure/redis/k8s/pvc.yaml
+  - vendor/infrastructure/kafka/k8s/kafka.yaml
   # 2. Shared configuration
   - configmap.yaml
   - secrets.yaml
+  - vendor/services/memorial-service/k8s/serviceaccount.yaml
+  - vendor/services/memorial-service/k8s/service.yaml
+  - vendor/services/memorial-service/k8s/deployment.yaml
+  - vendor/services/memorial-service/k8s/hpa.yaml
+  - vendor/services/admin-service/k8s/service.yaml
+  - vendor/services/admin-service/k8s/deployment.yaml
+  - vendor/services/admin-service/k8s/hpa.yaml
+  - vendor/services/frontend/k8s/service.yaml
+  - vendor/services/frontend/k8s/deployment.yaml
+  - vendor/services/admin-panel/k8s/service.yaml
+  - vendor/services/admin-panel/k8s/deployment.yaml
   # 3. Network controls
   - network-policy.yaml
   # 4. Ingress (depends on services being present)

@@ -1,0 +1,31 @@
+# Postgres init-scripts ConfigMap
+# Populate binaryData via kustomize secretGenerator or mount init.sql from CI:
+#   kubectl create configmap postgres-init-scripts \
+#     --from-file=init.sql=infrastructure/postgres/init.sql \
+#     -n mortalbook --dry-run=client -o yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-init-scripts
+  namespace: mortalbook
+  labels:
+    app: postgres
+    app.kubernetes.io/part-of: mortalbook
+data:
+  # Placeholder — replace with actual SQL from infrastructure/postgres/init.sql
+  init.sql: |
+    -- Created by mortalbook init scripts
+    -- Full content loaded by CI/CD pipeline
+---
+# Non-sensitive Postgres configuration parameters
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-config
+  namespace: mortalbook
+  labels:
+    app: postgres
+    app.kubernetes.io/part-of: mortalbook
+data:
+  POSTGRES_DB: "mortalbook_db"
+  POSTGRES_INITDB_ARGS: "--encoding=UTF8"

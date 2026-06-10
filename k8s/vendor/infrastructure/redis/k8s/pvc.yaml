@@ -1,0 +1,14 @@
+# NOTE: This standalone PVC is superseded by the StatefulSet volumeClaimTemplate.
+# Kept for reference only — delete to avoid confusion.
+#
+# apiVersion: v1
+# kind: PersistentVolumeClaim
+# metadata:
+#   name: redis-pvc
+#   namespace: mortalbook
+# spec:
+#   accessModes: [ReadWriteOnce]
+#   resources:
+#     requests:
+#       storage: 5Gi
+#   storageClassName: standard

@@ -1,0 +1,18 @@
+# NOTE: This standalone PVC is no longer used.
+# The StatefulSet in deployment.yaml provisions storage via volumeClaimTemplates.
+# This file is kept for reference; delete it to avoid confusion.
+#
+# To pre-bind to a specific PV, add the PV name to the StatefulSet
+# volumeClaimTemplate's spec.volumeName instead.
+#
+# apiVersion: v1
+# kind: PersistentVolumeClaim
+# metadata:
+#   name: postgres-pvc
+#   namespace: mortalbook
+# spec:
+#   accessModes: [ReadWriteOnce]
+#   resources:
+#     requests:
+#       storage: 20Gi
+#   storageClassName: standard

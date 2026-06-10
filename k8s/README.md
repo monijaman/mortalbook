@@ -3,26 +3,8 @@
 ## Deployment
 
 ```bash
-# Create namespace
-kubectl apply -f namespace.yaml
-
-# Create ConfigMaps and Secrets
-kubectl apply -f configmap.yaml
-kubectl apply -f secrets.yaml
-
-# Deploy infrastructure
-kubectl apply -f infrastructure/postgres/k8s/
-kubectl apply -f infrastructure/redis/k8s/
-kubectl apply -f infrastructure/kafka/k8s/
-
-# Deploy services
-kubectl apply -f services/memorial-service/k8s/
-kubectl apply -f services/admin-service/k8s/
-kubectl apply -f services/frontend/k8s/
-kubectl apply -f services/admin-panel/k8s/
-
-# Setup ingress
-kubectl apply -f k8s/ingress.yaml
+# Build and publish images first, then apply the full stack bundle
+kubectl apply -k k8s/
 ```
 
 ## Verify Deployment
@@ -32,6 +14,7 @@ kubectl get namespaces
 kubectl get deployments -n mortalbook
 kubectl get pods -n mortalbook
 kubectl get services -n mortalbook
+kubectl get ingress -n mortalbook
 ```
 
 ## Scaling

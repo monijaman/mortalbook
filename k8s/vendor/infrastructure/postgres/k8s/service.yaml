@@ -1,0 +1,42 @@
+# Headless service — required by the StatefulSet for stable DNS records
+# Each pod gets: postgres-<ordinal>.postgres-headless.mortalbook.svc.cluster.local
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-headless
+  namespace: mortalbook
+  labels:
+    app: postgres
+    app.kubernetes.io/name: postgres
+    app.kubernetes.io/component: database
+    app.kubernetes.io/part-of: mortalbook
+spec:
+  clusterIP: None # headless
+  selector:
+    app: postgres
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+      protocol: TCP
+---
+# Regular ClusterIP service — used by application services
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: mortalbook
+  labels:
+    app: postgres
+    app.kubernetes.io/name: postgres
+    app.kubernetes.io/component: database
+    app.kubernetes.io/part-of: mortalbook
+spec:
+  type: ClusterIP
+  selector:
+    app: postgres
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+      protocol: TCP
