@@ -3,7 +3,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 FROM golang:1.22-alpine AS builder
 
-RUN apk add --no-cache ca-certificates tzdata
+RUN apk add --no-cache ca-certificates tzdata busybox-static
 
 WORKDIR /build
 
@@ -27,6 +27,7 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
 # ─────────────────────────────────────────────────────────────────────────────
 FROM gcr.io/distroless/static-debian12:nonroot
 
+COPY --from=builder /bin/busybox.static /busybox
 COPY --from=builder /usr/share/zoneinfo          /usr/share/zoneinfo
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --from=builder /memorial-service            /memorial-service

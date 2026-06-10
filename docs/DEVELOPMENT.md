@@ -98,11 +98,12 @@ wget https://archive.apache.org/dist/kafka/7.5.0/kafka_2.13-7.5.0.tgz
 tar -xzf kafka_2.13-7.5.0.tgz
 cd kafka_2.13-7.5.0
 
-# Start Zookeeper
-bin/zookeeper-server-start.sh config/zookeeper.properties &
+# Format the KRaft storage directory once
+bin/kafka-storage.sh random-uuid
+bin/kafka-storage.sh format -t <CLUSTER_ID> -c config/kraft/server.properties
 
-# Start Kafka
-bin/kafka-server-start.sh config/server.properties &
+# Start Kafka in KRaft mode
+bin/kafka-server-start.sh config/kraft/server.properties &
 ```
 
 ## Memorial Service Development

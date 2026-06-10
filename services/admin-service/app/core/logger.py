@@ -12,7 +12,8 @@ def get_logger(name: str) -> logging.Logger:
     # Only configure once
     if not logger.handlers:
         # Set level
-        level = getattr(logging, settings.LOG_LEVEL, logging.INFO)
+        level_name = str(settings.LOG_LEVEL).upper()
+        level = getattr(logging, level_name, logging.INFO)
         logger.setLevel(level)
         
         # Console handler with JSON formatter

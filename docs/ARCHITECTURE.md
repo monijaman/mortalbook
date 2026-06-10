@@ -50,8 +50,8 @@ Mortalbook is a production-ready microservices platform for creating, managing, 
          │  └──────────────┘  └──────────────┘  │
          │                                       │
          │  ┌──────────────────────────────┐    │
-         │  │  Kafka + Zookeeper           │    │
-         │  │  9092 (Kafka) / 2181 (ZK)    │    │
+         │  │  Kafka (KRaft)               │    │
+         │  │  9092 (Kafka) / 29093 (Ctrl) │    │
          │  └──────────────────────────────┘    │
          │                                       │
          └───────────────────────────────────────┘
@@ -349,7 +349,7 @@ mortalbook namespace:
 │   ├── postgres (1 replica)
 │   ├── redis (1 replica)
 │   ├── kafka (1 replica)
-│   └── zookeeper (1 replica)
+│   └── kafka-headless (ClusterIP:None)
 ├── Services
 │   ├── memorial-service (ClusterIP:5001/50001)
 │   ├── admin-service (ClusterIP:5002)
@@ -358,7 +358,7 @@ mortalbook namespace:
 │   ├── postgres (ClusterIP:5432)
 │   ├── redis (ClusterIP:6379)
 │   ├── kafka (ClusterIP:9092)
-│   └── zookeeper (ClusterIP:2181)
+│   └── kafka-headless (ClusterIP:None)
 ├── Ingress
 │   └── mortalbook-ingress → frontend/admin/api routing
 ├── ConfigMaps

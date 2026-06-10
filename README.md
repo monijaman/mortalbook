@@ -68,7 +68,7 @@ docker-compose exec postgres psql -U postgres -d mortalbook_db < infrastructure/
     │                                │
     │  PostgreSQL 16 (5432)         │
     │  Redis 7 (6379)               │
-    │  Kafka 7.5 + Zookeeper (9092) │
+    │  Kafka 7.5 (KRaft, 9092)      │
     └────────────────────────────────┘
 ```
 

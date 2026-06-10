@@ -114,14 +114,12 @@ kubectl wait --for=condition=ready pod -l app=redis --timeout=300s
 kubectl exec -it deployment/redis -- redis-cli ping
 ```
 
-#### Kafka & Zookeeper
+#### Kafka (KRaft)
 
 ```bash
-kubectl apply -f infrastructure/kafka/k8s/zookeeper.yaml
 kubectl apply -f infrastructure/kafka/k8s/kafka.yaml
 
-# Wait for both to be ready
-kubectl wait --for=condition=ready pod -l app=zookeeper --timeout=300s
+# Wait for Kafka to be ready
 kubectl wait --for=condition=ready pod -l app=kafka --timeout=300s
 
 # Create Kafka topics
