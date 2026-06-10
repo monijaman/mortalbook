@@ -276,6 +276,87 @@ cd services/frontend && npm run dev
 cd services/admin-panel && npm run dev
 ```
 
+### Local Kubernetes with Minikube
+
+**1. Install minikube** (if not installed):
+
+```bash
+curl -LO https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
+mkdir -p ~/.local/bin
+install minikube-linux-amd64 ~/.local/bin/minikube
+rm minikube-linux-amd64
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
+source ~/.bashrc
+```
+
+**2. Start the cluster:**
+
+```bash
+minikube start --driver=docker
+```
+
+**3. Build images directly into minikube's Docker daemon** (no registry needed):
+
+```bash
+eval $(minikube docker-env)
+make build-services VERSION=1.0.0
+```
+
+**4. Fill in secrets** — edit `k8s/secrets.yaml` and replace placeholder values:
+
+```yaml
+DB_PASSWORD: "your-password"      # must match k8s/vendor/infrastructure/postgres/k8s/secret.yaml
+JWT_SECRET: "your-32+-char-secret"
+ADMIN_SERVICE_SECRET_KEY: "your-admin-secret"
+```
+
+**5. Deploy everything:**
+
+```bash
+kubectl apply -k k8s/
+# or, for ordered deploy that waits for infra readiness:
+make k8s-apply
+```
+
+**6. Verify all pods are running:**
+
+```bash
+make k8s-status
+# or
+kubectl get pods -n mortalbook
+```
+
+**7. Access the app:**
+
+```bash
+# Option A — port forward
+kubectl port-forward svc/frontend 3000:3000 -n mortalbook
+kubectl port-forward svc/admin-panel 8080:8080 -n mortalbook
+
+# Option B — minikube service tunnel (opens browser automatically)
+minikube service frontend -n mortalbook
+minikube service admin-panel -n mortalbook
+```
+
+> **Note for MicroK8s users:** If you have MicroK8s installed alongside minikube, its `kubectl`
+> wrapper takes priority in PATH and may show a permissions error. Either fix the permissions:
+> ```bash
+> sudo usermod -a -G microk8s $USER && sudo chown -R $USER ~/.kube
+> newgrp microk8s
+> ```
+> Or use minikube's own kubectl to bypass it:
+> ```bash
+> minikube kubectl -- port-forward svc/frontend 3000:3000 -n mortalbook
+> ```
+
+**Tear down:**
+
+```bash
+make k8s-delete
+# or stop the cluster entirely
+minikube stop
+```
+
 ### Production (Kubernetes)
 
 ```bash
