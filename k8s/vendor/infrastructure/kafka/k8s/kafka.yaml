@@ -30,7 +30,7 @@ spec:
 
       containers:
         - name: kafka
-          image: bitnami/kafka:3.7.0
+          image: apache/kafka:4.2.1
           imagePullPolicy: IfNotPresent
           ports:
             - name: broker
@@ -40,47 +40,43 @@ spec:
               containerPort: 29093
               protocol: TCP
           env:
-            - name: ALLOW_PLAINTEXT_LISTENER
-              value: "yes"
             - name: CLUSTER_ID
               value: "q1Sh-9_ISia_zwGINzRvyQ"
-            - name: KAFKA_KRAFT_CLUSTER_ID
-              value: "q1Sh-9_ISia_zwGINzRvyQ"
-            - name: KAFKA_CFG_NODE_ID
+            - name: KAFKA_NODE_ID
               value: "1"
-            - name: KAFKA_CFG_PROCESS_ROLES
+            - name: KAFKA_PROCESS_ROLES
               value: "broker,controller"
-            - name: KAFKA_CFG_CONTROLLER_QUORUM_VOTERS
+            - name: KAFKA_CONTROLLER_QUORUM_VOTERS
               value: "1@localhost:29093"
-            - name: KAFKA_CFG_CONTROLLER_LISTENER_NAMES
+            - name: KAFKA_CONTROLLER_LISTENER_NAMES
               value: "CONTROLLER"
-            - name: KAFKA_CFG_LISTENERS
+            - name: KAFKA_LISTENERS
               value: "PLAINTEXT://:9092,CONTROLLER://:29093"
-            - name: KAFKA_CFG_ADVERTISED_LISTENERS
+            - name: KAFKA_ADVERTISED_LISTENERS
               value: "PLAINTEXT://kafka:9092"
-            - name: KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP
+            - name: KAFKA_LISTENER_SECURITY_PROTOCOL_MAP
               value: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT"
-            - name: KAFKA_CFG_INTER_BROKER_LISTENER_NAME
+            - name: KAFKA_INTER_BROKER_LISTENER_NAME
               value: "PLAINTEXT"
-            - name: KAFKA_CFG_OFFSETS_TOPIC_REPLICATION_FACTOR
+            - name: KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR
               value: "1"
-            - name: KAFKA_CFG_TRANSACTION_STATE_LOG_REPLICATION_FACTOR
+            - name: KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR
               value: "1"
-            - name: KAFKA_CFG_TRANSACTION_STATE_LOG_MIN_ISR
+            - name: KAFKA_TRANSACTION_STATE_LOG_MIN_ISR
               value: "1"
-            - name: KAFKA_CFG_GROUP_INITIAL_REBALANCE_DELAY_MS
+            - name: KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS
               value: "0"
-            - name: KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE
+            - name: KAFKA_AUTO_CREATE_TOPICS_ENABLE
               value: "true"
-            - name: KAFKA_CFG_LOG_RETENTION_HOURS
+            - name: KAFKA_LOG_RETENTION_HOURS
               value: "168"
-            - name: KAFKA_CFG_LOG_DIRS
-              value: "/bitnami/kafka/data"
+            - name: KAFKA_LOG_DIRS
+              value: "/var/lib/kafka/data"
 
           livenessProbe:
             exec:
               command:
-                - /opt/bitnami/kafka/bin/kafka-broker-api-versions.sh
+                - /opt/kafka/bin/kafka-broker-api-versions.sh
                 - --bootstrap-server
                 - localhost:9092
             initialDelaySeconds: 60
@@ -91,7 +87,7 @@ spec:
           readinessProbe:
             exec:
               command:
-                - /opt/bitnami/kafka/bin/kafka-broker-api-versions.sh
+                - /opt/kafka/bin/kafka-broker-api-versions.sh
                 - --bootstrap-server
                 - localhost:9092
             initialDelaySeconds: 30
@@ -109,7 +105,7 @@ spec:
 
           volumeMounts:
             - name: kafka-data
-              mountPath: /bitnami/kafka/data
+              mountPath: /var/lib/kafka/data
 
   volumeClaimTemplates:
     - metadata:
