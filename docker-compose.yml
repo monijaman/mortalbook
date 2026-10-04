@@ -1,242 +1,49 @@
-version: '3.9'
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Shared extension fields (reduce repetition)
-# ─────────────────────────────────────────────────────────────────────────────
-x-service-defaults: &service-defaults
-  restart: unless-stopped
-  networks:
-    - mortalbook-network
-
-x-logging: &default-logging
-  driver: "json-file"
-  options:
-    max-size: "10m"
-    max-file: "3"
-
 services:
-  # ====================================
-  # INFRASTRUCTURE SERVICES
-  # ====================================
-
-  postgres:
+  db:
     image: postgres:16-alpine
-    container_name: mortalbook-postgres
-    <<: *service-defaults
     environment:
-      POSTGRES_DB: ${DB_NAME:-mortalbook_db}
-      POSTGRES_USER: ${DB_USER:-postgres}
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
-    ports:
-      - "5432:5432"
+      POSTGRES_USER: mortalbook
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mortalbook}
+      POSTGRES_DB: mortalbook
     volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./infrastructure/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-mortalbook_db}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 15s
-    logging: *default-logging
+      test: ["CMD-SHELL", "pg_isready -U mortalbook"]
+      interval: 5s
+      retries: 10
 
-  redis:
-    image: redis:7-alpine
-    container_name: mortalbook-redis
-    <<: *service-defaults
-    command: >
-      redis-server
-      --appendonly yes
-      --maxmemory 256mb
-      --maxmemory-policy allkeys-lru
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 5s
-    logging: *default-logging
-
-  kafka:
-    image: confluentinc/cp-kafka:7.5.0
-    container_name: mortalbook-kafka
-    <<: *service-defaults
+  # Self-hosted machine translation + language detection (no API key needed).
+  # First start downloads language models and can take several minutes.
+  translate:
+    image: libretranslate/libretranslate:latest
     environment:
-      CLUSTER_ID: q1Sh-9_ISia_zwGINzRvyQ
-      KAFKA_NODE_ID: 1
-      KAFKA_PROCESS_ROLES: broker,controller
-      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:29093
-      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
-      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:29093
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
-      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
-      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
-      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
-      KAFKA_LOG_RETENTION_HOURS: 168
-      KAFKA_HEAP_OPTS: "-Xms256m -Xmx256m"
-    ports:
-      - "9092:9092"
+      LT_CHAR_LIMIT: "20000"
+      LT_REQ_LIMIT: "0"
     volumes:
-      - kafka_data:/var/lib/kafka/data
-    healthcheck:
-      test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server kafka:9092"]
-      interval: 15s
-      timeout: 10s
-      retries: 5
-      start_period: 30s
-    logging: *default-logging
+      - ltmodels:/home/libretranslate/.local
 
-  # ====================================
-  # MICROSERVICES
-  # ====================================
-
-  memorial-service:
-    build:
-      context: ./services/memorial-service
-      dockerfile: Dockerfile
-    image: mortalbook/memorial-service:latest
-    container_name: mortalbook-memorial-service
-    <<: *service-defaults
-    ports:
-      - "8080:8080"
-      - "50001:50001"
+  backend:
+    build: ./backend
     environment:
-      - PORT=8080
-      - GRPC_PORT=50001
-      - DB_HOST=postgres
-      - DB_PORT=5432
-      - DB_NAME=${DB_NAME:-mortalbook_db}
-      - DB_USER=${DB_USER:-postgres}
-      - DB_PASSWORD=${DB_PASSWORD}
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - KAFKA_BROKERS=kafka:9092
-      - KAFKA_MEMORIAL_TOPIC=memorial-events
-      - LOG_LEVEL=${LOG_LEVEL:-info}
-      - LOG_FORMAT=json
+      DATABASE_URL: postgres://mortalbook:${POSTGRES_PASSWORD:-mortalbook}@db:5432/mortalbook
+      TRANSLATE_URL: http://translate:5000
+      UPLOAD_DIR: /data/uploads
+    volumes:
+      - uploads:/data/uploads
     depends_on:
-      postgres:
+      db:
         condition: service_healthy
-      redis:
-        condition: service_healthy
-      kafka:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "/busybox", "wget", "-qO-", "http://localhost:8080/health"]
-      interval: 15s
-      timeout: 5s
-      retries: 3
-      start_period: 20s
-    logging: *default-logging
-
-  admin-service:
-    build:
-      context: ./services/admin-service
-      dockerfile: Dockerfile
-    image: mortalbook/admin-service:latest
-    container_name: mortalbook-admin-service
-    <<: *service-defaults
-    ports:
-      - "5002:5002"
-    environment:
-      - PORT=5002
-      - APP_ENV=${APP_ENV:-development}
-      - DB_HOST=postgres
-      - DB_PORT=5432
-      - DB_NAME=${DB_NAME:-mortalbook_db}
-      - DB_USER=${DB_USER:-postgres}
-      - DB_PASSWORD=${DB_PASSWORD}
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - MEMORIAL_GRPC_ADDR=memorial-service:50001
-      - KAFKA_BROKERS=kafka:9092
-      - KAFKA_MEMORIAL_TOPIC=memorial-events
-      - JWT_SECRET=${JWT_SECRET}
-      - ADMIN_SERVICE_SECRET_KEY=${ADMIN_SERVICE_SECRET_KEY}
-      - LOG_LEVEL=${LOG_LEVEL:-info}
-      - RATE_LIMIT_REQUESTS=10
-      - RATE_LIMIT_WINDOW_SECONDS=60
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      kafka:
-        condition: service_healthy
-      memorial-service:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5002/health')"]
-      interval: 15s
-      timeout: 5s
-      retries: 3
-      start_period: 20s
-    logging: *default-logging
 
   frontend:
-    build:
-      context: ./services/frontend
-      dockerfile: Dockerfile
-    image: mortalbook/frontend:latest
-    container_name: mortalbook-frontend
-    <<: *service-defaults
+    build: ./frontend
+    environment:
+      BACKEND_URL: http://backend:8080
     ports:
       - "3000:3000"
-    environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:8080
-      - NEXT_PUBLIC_ADMIN_API_URL=http://localhost:5002
     depends_on:
-      memorial-service:
-        condition: service_healthy
-      admin-service:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/health || exit 1"]
-      interval: 15s
-      timeout: 5s
-      retries: 3
-      start_period: 30s
-    logging: *default-logging
-
-  admin-panel:
-    build:
-      context: ./services/admin-panel
-      dockerfile: Dockerfile
-    image: mortalbook/admin-panel:latest
-    container_name: mortalbook-admin-panel
-    <<: *service-defaults
-    ports:
-      - "8081:80"      # exposed on 8081, nginx listens on 80 in the container
-    depends_on:
-      admin-service:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost/nginx-health || exit 1"]
-      interval: 15s
-      timeout: 5s
-      retries: 3
-      start_period: 15s
-    logging: *default-logging
+      - backend
 
 volumes:
-  postgres_data:
-    driver: local
-  redis_data:
-    driver: local
-  kafka_data:
-    driver: local
-
-networks:
-  mortalbook-network:
-    driver: bridge
-    ipam:
-      config:
-        - subnet: 172.20.0.0/16
+  pgdata:
+  uploads:
+  ltmodels:
