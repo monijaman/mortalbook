@@ -69,19 +69,27 @@ pub struct ListQuery {
 pub async fn list(
     State(s): State<AppState>,
     Query(q): Query<ListQuery>,
-) -> Result<Json<Vec<Person>>, AppError> {
+) -> Result<Json<Value>, AppError> {
     let search = q.q.map(|t| t.trim().to_string()).filter(|t| !t.is_empty());
+    let limit = q.limit.unwrap_or(24).clamp(1, 100);
+    let offset = q.offset.unwrap_or(0).max(0);
+    let total: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM people WHERE ($1::text IS NULL OR name ILIKE '%' || $1 || '%')",
+    )
+    .bind(&search)
+    .fetch_one(&s.db)
+    .await?;
     let people = sqlx::query_as::<_, Person>(&format!(
         "SELECT {PERSON_COLS} FROM people
          WHERE ($1::text IS NULL OR name ILIKE '%' || $1 || '%')
-         ORDER BY created_at DESC LIMIT $2 OFFSET $3"
+         ORDER BY name, id LIMIT $2 OFFSET $3"
     ))
-    .bind(search)
-    .bind(q.limit.unwrap_or(24).clamp(1, 100))
-    .bind(q.offset.unwrap_or(0).max(0))
+    .bind(&search)
+    .bind(limit)
+    .bind(offset)
     .fetch_all(&s.db)
     .await?;
-    Ok(Json(people))
+    Ok(Json(json!({ "items": people, "total": total, "limit": limit, "offset": offset })))
 }
 
 pub async fn get(
