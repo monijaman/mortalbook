@@ -38,8 +38,9 @@ services:
     build: ./frontend
     environment:
       BACKEND_URL: http://backend:8080
+      ORIGIN: https://mortalbook.com
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3020:3000"
     depends_on:
       - backend
 

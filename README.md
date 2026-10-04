@@ -30,6 +30,10 @@ cd frontend && npm install && npm run dev      # http://localhost:3000
 Layout: `backend/` (API, migrations in `backend/migrations`), `frontend/` (SvelteKit; `src/hooks.server.js`
 proxies `/api` and `/uploads` to the backend).
 
+## Deploy
+
+See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) (Contabo VPS, nginx, HTTPS, backups).
+
 ## Not built yet
 
 Email/SMS reminders, accounts/login, moderation, rate-limiting on submissions.
