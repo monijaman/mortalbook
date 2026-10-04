@@ -1,13 +1,21 @@
 <script>
   import { onMount } from 'svelte';
+  import T from '$lib/T.svelte';
   import { lang, setLang, detectLang } from '$lib/i18n.js';
 
+  // most-spoken / most-requested languages, shown first
+  const popular = ['en', 'bn', 'hi', 'ur', 'ar', 'es', 'fr', 'de', 'pt', 'ru', 'zh', 'ja', 'ko', 'tr', 'id', 'it'];
   const fallback = [
-    ['en', 'English'], ['bn', 'Bengali'], ['hi', 'Hindi'], ['ar', 'Arabic'], ['es', 'Spanish'],
+    ['en', 'English'], ['bn', 'Bengali'], ['hi', 'Hindi'], ['ur', 'Urdu'], ['ar', 'Arabic'], ['es', 'Spanish'],
     ['fr', 'French'], ['de', 'German'], ['pt', 'Portuguese'], ['ru', 'Russian'], ['zh', 'Chinese'],
-    ['ja', 'Japanese'], ['ko', 'Korean'], ['tr', 'Turkish'], ['ur', 'Urdu'], ['id', 'Indonesian']
+    ['ja', 'Japanese'], ['ko', 'Korean'], ['tr', 'Turkish'], ['id', 'Indonesian'], ['it', 'Italian']
   ];
   let languages = $state(fallback);
+
+  const top = $derived(popular.map((c) => languages.find(([code]) => code === c)).filter(Boolean));
+  const rest = $derived(
+    languages.filter(([c]) => !popular.includes(c)).sort((a, b) => a[1].localeCompare(b[1]))
+  );
 
   onMount(async () => {
     setLang(detectLang());
@@ -22,11 +30,20 @@
 </script>
 
 <label class="picker">
-  <span aria-hidden="true">🌐</span>
+  <span class="label"><span aria-hidden="true">🌐</span> <T text="Translate" /></span>
   <select value={$lang} onchange={(e) => setLang(e.currentTarget.value)} aria-label="Language">
-    {#each languages as [code, name]}
-      <option value={code}>{name}</option>
-    {/each}
+    <optgroup label="Popular">
+      {#each top as [code, name]}
+        <option value={code}>{name}</option>
+      {/each}
+    </optgroup>
+    {#if rest.length}
+      <optgroup label="All languages">
+        {#each rest as [code, name]}
+          <option value={code}>{name}</option>
+        {/each}
+      </optgroup>
+    {/if}
     {#if !languages.some(([c]) => c === $lang)}
       <option value={$lang}>{$lang}</option>
     {/if}
@@ -34,9 +51,11 @@
 </label>
 
 <style>
-  .picker { display: inline-flex; align-items: center; gap: 0.4rem; }
+  .picker { display: inline-flex; align-items: center; gap: 0.5rem; margin-left: auto; }
+  .label { color: var(--muted); font-size: 0.95rem; white-space: nowrap; }
   select {
-    background: var(--panel); color: var(--text); border: 1px solid var(--line);
-    border-radius: 6px; padding: 0.35rem 0.5rem; font: inherit; font-size: 0.9rem;
+    background: var(--panel); color: var(--text); border: 1px solid var(--accent);
+    border-radius: 6px; padding: 0.4rem 0.6rem; font: inherit; font-size: 0.95rem; cursor: pointer;
   }
+  @media (max-width: 520px) { .label { display: none; } }
 </style>

@@ -1,11 +1,11 @@
-use std::path::PathBuf;
+use std::{collections::HashMap, path::PathBuf};
 
 use axum::{
     extract::{Multipart, Path, Query, State},
     Json,
 };
-use chrono::{Datelike, NaiveDate, Utc};
-use serde::Deserialize;
+use chrono::{Datelike, Duration, NaiveDate, Utc};
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tokio::{fs, io::AsyncWriteExt};
 use uuid::Uuid;
@@ -60,6 +60,83 @@ pub async fn today(
 }
 
 #[derive(Deserialize)]
+pub struct WeekQuery {
+    year: Option<i32>,
+    month: Option<u32>,
+    day: Option<u32>,
+    /// days looked at on each side of today (default 7)
+    span: Option<i64>,
+    /// max people returned per side (default 6)
+    limit: Option<usize>,
+}
+
+#[derive(sqlx::FromRow)]
+struct PersonMd {
+    #[sqlx(flatten)]
+    person: Person,
+    md: i32,
+}
+
+#[derive(Serialize)]
+struct Anniversary {
+    #[serde(flatten)]
+    person: Person,
+    /// days from today: positive = upcoming, negative = already passed
+    days: i64,
+}
+
+/// Death anniversaries in the days after (tomorrow..+span) and before (-span..yesterday) a date.
+/// Only the nearest `limit` people per side are returned, those with photos first within a day.
+pub async fn week(
+    State(s): State<AppState>,
+    Query(q): Query<WeekQuery>,
+) -> Result<Json<Value>, AppError> {
+    let now = Utc::now().date_naive();
+    let today = NaiveDate::from_ymd_opt(
+        q.year.unwrap_or(now.year()),
+        q.month.unwrap_or(now.month()),
+        q.day.unwrap_or(now.day()),
+    )
+    .ok_or_else(|| AppError::BadRequest("invalid date".into()))?;
+    let span = q.span.unwrap_or(7).clamp(1, 14);
+    let limit = q.limit.unwrap_or(6).clamp(1, 24);
+
+    // month*100+day -> offset from today
+    let mut keys: HashMap<i32, i64> = HashMap::new();
+    for off in (-span..=span).filter(|o| *o != 0) {
+        let d = today + Duration::days(off);
+        keys.insert((d.month() * 100 + d.day()) as i32, off);
+        let leap = NaiveDate::from_ymd_opt(d.year(), 2, 29).is_some();
+        if d.month() == 2 && d.day() == 28 && !leap {
+            keys.entry(229).or_insert(off); // Feb 29 anniversaries land on Feb 28
+        }
+    }
+    let ids: Vec<i32> = keys.keys().copied().collect();
+
+    let rows = sqlx::query_as::<_, PersonMd>(&format!(
+        "SELECT {PERSON_COLS},
+                (EXTRACT(MONTH FROM death_date) * 100 + EXTRACT(DAY FROM death_date))::int AS md
+         FROM people
+         WHERE (EXTRACT(MONTH FROM death_date) * 100 + EXTRACT(DAY FROM death_date))::int = ANY($1)"
+    ))
+    .bind(&ids)
+    .fetch_all(&s.db)
+    .await?;
+
+    let mut all: Vec<Anniversary> = rows
+        .into_iter()
+        .filter_map(|r| keys.get(&r.md).map(|d| Anniversary { person: r.person, days: *d }))
+        .collect();
+    all.sort_by(|a, b| {
+        (a.days.abs(), a.person.photo_url.is_none(), &a.person.name)
+            .cmp(&(b.days.abs(), b.person.photo_url.is_none(), &b.person.name))
+    });
+    let upcoming: Vec<&Anniversary> = all.iter().filter(|a| a.days > 0).take(limit).collect();
+    let recent: Vec<&Anniversary> = all.iter().filter(|a| a.days < 0).take(limit).collect();
+    Ok(Json(json!({ "upcoming": upcoming, "recent": recent })))
+}
+
+#[derive(Deserialize)]
 pub struct ListQuery {
     q: Option<String>,
     limit: Option<i64>,
@@ -74,14 +151,14 @@ pub async fn list(
     let limit = q.limit.unwrap_or(24).clamp(1, 100);
     let offset = q.offset.unwrap_or(0).max(0);
     let total: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM people WHERE ($1::text IS NULL OR name ILIKE '%' || $1 || '%')",
+        "SELECT COUNT(*) FROM people WHERE ($1::text IS NULL OR (name ILIKE '%' || $1 || '%' OR occupation ILIKE '%' || $1 || '%'))",
     )
     .bind(&search)
     .fetch_one(&s.db)
     .await?;
     let people = sqlx::query_as::<_, Person>(&format!(
         "SELECT {PERSON_COLS} FROM people
-         WHERE ($1::text IS NULL OR name ILIKE '%' || $1 || '%')
+         WHERE ($1::text IS NULL OR (name ILIKE '%' || $1 || '%' OR occupation ILIKE '%' || $1 || '%'))
          ORDER BY name, id LIMIT $2 OFFSET $3"
     ))
     .bind(&search)

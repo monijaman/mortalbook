@@ -32,6 +32,6 @@
   nav { display: flex; gap: 1.4rem; flex: 1; }
   nav a { color: var(--muted); text-decoration: none; }
   nav a:hover { color: var(--accent); }
-  main { max-width: 1100px; margin: 0 auto; padding: 2rem 1.5rem 4rem; }
+  main { max-width: 1600px; margin: 0 auto; padding: 2rem 1.5rem 4rem; }
   footer { text-align: center; padding: 2rem 1rem; border-top: 1px solid var(--line); font-style: italic; }
 </style>

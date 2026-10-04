@@ -57,6 +57,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/health", get(routes::health))
         .route("/api/people", get(routes::list).post(routes::create))
         .route("/api/people/today", get(routes::today))
+        .route("/api/people/week", get(routes::week))
         .route("/api/people/:id", get(routes::get))
         .route("/api/translate", post(routes::translate_texts))
         .route("/api/languages", get(routes::languages))
