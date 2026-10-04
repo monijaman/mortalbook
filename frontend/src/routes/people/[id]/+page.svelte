@@ -25,11 +25,19 @@
       <p class="dates">
         {#if p.birth_date}{longDate(p.birth_date, $lang)} – {/if}{longDate(p.death_date, $lang)}
       </p>
+      {#if p.occupation}<p class="occ"><T text={p.occupation} /></p>{/if}
       {#if age !== null && age >= 0}
         <p class="muted"><T text="Lived" /> {age} <T text="years" /></p>
       {/if}
     </div>
   </div>
+
+  {#if p.birth_place || p.death_place}
+    <dl class="facts">
+      {#if p.birth_place}<div><dt><T text="Born in" /></dt><dd>{p.birth_place}</dd></div>{/if}
+      {#if p.death_place}<div><dt><T text="Passed away in" /></dt><dd>{p.death_place}</dd></div>{/if}
+    </dl>
+  {/if}
 
   {#if paragraphs.length}
     <section class="bio">
@@ -74,6 +82,11 @@
   }
   h1 { font-size: clamp(2rem, 5vw, 3.2rem); margin: 0; }
   .dates { color: var(--accent); font-size: 1.2rem; margin: 0.4rem 0; }
+  .occ { margin: 0 0 0.4rem; font-style: italic; }
+  .facts { display: flex; flex-wrap: wrap; gap: 0.5rem 2.5rem; margin: 0 0 2rem; }
+  .facts div { display: flex; flex-direction: column; }
+  dt { color: var(--muted); font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.1em; }
+  dd { margin: 0; font-size: 1.15rem; }
   .bio { max-width: 720px; font-size: 1.2rem; }
   .gallery { display: grid; gap: 0.8rem; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
   .gallery img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 8px; filter: grayscale(0.6); }

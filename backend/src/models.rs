@@ -12,6 +12,9 @@ pub struct Person {
     pub bio: String,
     pub lang: Option<String>,
     pub photo_url: Option<String>,
+    pub occupation: Option<String>,
+    pub birth_place: Option<String>,
+    pub death_place: Option<String>,
     pub created_at: DateTime<Utc>,
 }
 

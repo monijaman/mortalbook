@@ -23,6 +23,7 @@
       {person.birth_date ? person.birth_date.slice(0, 4) : '—'} – {person.death_date.slice(0, 4)}
       {#if showAgo && ago > 0}· {ago} <T text={ago === 1 ? 'year ago' : 'years ago'} />{/if}
     </p>
+    {#if person.occupation}<p class="occ"><T text={person.occupation} /></p>{/if}
     {#if excerpt}<p class="excerpt"><T text={excerpt} from={person.lang || 'auto'} /></p>{/if}
   </div>
 </a>
@@ -41,5 +42,6 @@
   .body { padding: 0.9rem 1rem 1.1rem; }
   h3 { margin: 0 0 0.2rem; font-weight: 600; font-size: 1.2rem; }
   .dates { margin: 0 0 0.6rem; color: var(--accent); font-size: 0.9rem; }
+  .occ { margin: -0.3rem 0 0.5rem; color: var(--text); font-size: 0.95rem; font-style: italic; }
   .excerpt { margin: 0; color: var(--muted); font-size: 0.95rem; line-height: 1.5; }
 </style>

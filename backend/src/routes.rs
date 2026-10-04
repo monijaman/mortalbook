@@ -17,7 +17,7 @@ use crate::{
     AppState,
 };
 
-const PERSON_COLS: &str = "id, name, birth_date, death_date, bio, lang, photo_url, created_at";
+const PERSON_COLS: &str = "id, name, birth_date, death_date, bio, lang, photo_url, occupation, birth_place, death_place, created_at";
 
 pub async fn health() -> Json<Value> {
     Json(json!({ "status": "ok" }))
