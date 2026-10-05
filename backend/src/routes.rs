@@ -17,7 +17,7 @@ use crate::{
     AppState,
 };
 
-const PERSON_COLS: &str = "id, name, birth_date, death_date, bio, lang, photo_url, occupation, birth_place, death_place, created_at";
+const PERSON_COLS: &str = "id, name, birth_date, death_date, bio, lang, photo_url, occupation, birth_place, death_place, birth_precision, death_precision, created_at";
 
 pub async fn health() -> Json<Value> {
     Json(json!({ "status": "ok" }))
@@ -47,8 +47,9 @@ pub async fn today(
 
     let people = sqlx::query_as::<_, Person>(&format!(
         "SELECT {PERSON_COLS} FROM people
-         WHERE (EXTRACT(MONTH FROM death_date)::int = $1 AND EXTRACT(DAY FROM death_date)::int = $2)
-            OR ($3 AND EXTRACT(MONTH FROM death_date)::int = 2 AND EXTRACT(DAY FROM death_date)::int = 29)
+         WHERE death_precision = 'day'
+           AND ((EXTRACT(MONTH FROM death_date)::int = $1 AND EXTRACT(DAY FROM death_date)::int = $2)
+             OR ($3 AND EXTRACT(MONTH FROM death_date)::int = 2 AND EXTRACT(DAY FROM death_date)::int = 29))
          ORDER BY death_date, name"
     ))
     .bind(month as i32)
@@ -117,7 +118,8 @@ pub async fn week(
         "SELECT {PERSON_COLS},
                 (EXTRACT(MONTH FROM death_date) * 100 + EXTRACT(DAY FROM death_date))::int AS md
          FROM people
-         WHERE (EXTRACT(MONTH FROM death_date) * 100 + EXTRACT(DAY FROM death_date))::int = ANY($1)"
+         WHERE death_precision = 'day'
+           AND (EXTRACT(MONTH FROM death_date) * 100 + EXTRACT(DAY FROM death_date))::int = ANY($1)"
     ))
     .bind(&ids)
     .fetch_all(&s.db)

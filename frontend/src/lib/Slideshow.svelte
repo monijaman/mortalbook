@@ -1,6 +1,6 @@
 <script>
   import T from '$lib/T.svelte';
-  import { years } from '$lib/format.js';
+  import { years, yearLabel } from '$lib/format.js';
 
   // One person at a time, `interval` ms each, cross-fading.
   let { people, interval = 7000 } = $props();
@@ -48,7 +48,7 @@
         <div class="text">
           <h2>{p.name}</h2>
           <p class="dates">
-            {p.birth_date ? p.birth_date.slice(0, 4) : '—'} – {p.death_date.slice(0, 4)}
+            {p.birth_date ? yearLabel(p.birth_date, p.birth_precision) : '—'} – {yearLabel(p.death_date, p.death_precision)}
             {#if years(p.death_date) > 0}
               · {years(p.death_date)} <T text={years(p.death_date) === 1 ? 'year ago' : 'years ago'} />
             {/if}

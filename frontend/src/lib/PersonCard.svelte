@@ -1,6 +1,6 @@
 <script>
   import T from '$lib/T.svelte';
-  import { years } from '$lib/format.js';
+  import { years, yearLabel } from '$lib/format.js';
 
   let { person, showAgo = false, days = undefined } = $props();
   // "Tomorrow", "In 3 days", "Yesterday", "3 days ago" (whole phrase is translated)
@@ -27,7 +27,7 @@
   <div class="body">
     <h3>{person.name}</h3>
     <p class="dates">
-      {person.birth_date ? person.birth_date.slice(0, 4) : '—'} – {person.death_date.slice(0, 4)}
+      {person.birth_date ? yearLabel(person.birth_date, person.birth_precision) : '—'} – {yearLabel(person.death_date, person.death_precision)}
       {#if showAgo && ago > 0}· {ago} <T text={ago === 1 ? 'year ago' : 'years ago'} />{/if}
     </p>
     {#if person.occupation}<p class="occ"><T text={person.occupation} /></p>{/if}

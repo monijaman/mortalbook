@@ -1,13 +1,17 @@
 <script>
   import T from '$lib/T.svelte';
   import { lang } from '$lib/i18n.js';
-  import { longDate, ageAt, embedUrl } from '$lib/format.js';
+  import { dateLabel, ageAt, embedUrl } from '$lib/format.js';
 
   let { data } = $props();
   const p = $derived(data.person);
   const images = $derived(p.media.filter((m) => m.kind === 'image'));
   const videos = $derived(p.media.filter((m) => m.kind === 'video'));
-  const age = $derived(p.birth_date ? ageAt(p.birth_date, p.death_date) : null);
+  // only when both dates are exact enough for a meaningful number
+  const exact = (pr) => pr === 'day' || pr === 'month' || pr === 'year';
+  const age = $derived(
+    p.birth_date && exact(p.birth_precision) && exact(p.death_precision) ? ageAt(p.birth_date, p.death_date) : null
+  );
   const paragraphs = $derived(p.bio.split(/\n{2,}/).filter((s) => s.trim()));
 </script>
 
@@ -23,7 +27,7 @@
     <div>
       <h1>{p.name}</h1>
       <p class="dates">
-        {#if p.birth_date}{longDate(p.birth_date, $lang)} – {/if}{longDate(p.death_date, $lang)}
+        {#if p.birth_date}{dateLabel(p.birth_date, p.birth_precision, $lang)} – {/if}{dateLabel(p.death_date, p.death_precision, $lang)}
       </p>
       {#if p.occupation}<p class="occ"><T text={p.occupation} /></p>{/if}
       {#if age !== null && age >= 0}

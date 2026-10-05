@@ -15,6 +15,9 @@ pub struct Person {
     pub occupation: Option<String>,
     pub birth_place: Option<String>,
     pub death_place: Option<String>,
+    /// 'day' | 'month' | 'year' | 'decade' | 'century'
+    pub birth_precision: String,
+    pub death_precision: String,
     pub created_at: DateTime<Utc>,
 }
 
