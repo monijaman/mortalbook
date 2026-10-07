@@ -4,7 +4,9 @@
 DO $migration$
 BEGIN
   INSERT INTO people (id, name, birth_date, death_date, bio, lang, photo_url, occupation, birth_place, death_place)
-  SELECT gen_random_uuid(), v.name, NULL, v.death_date, v.bio, 'en', NULL, v.occupation, v.birth_place, NULL
+  SELECT gen_random_uuid(), v.name, NULL, v.death_date,
+    'Imported from BornGlorious death-anniversary data. Source: BornGlorious.com; Freebase (CC BY); Wikipedia (CC BY-SA).',
+    'en', NULL, v.occupation, v.birth_place, NULL
   FROM (VALUES
     ('Jagadish Chandra Bose', DATE '1937-11-23', 'Physicist', 'Bikrampur'),
     ('Iskander Mirza', DATE '1969-11-12', 'Politician', 'Murshidabad'),
@@ -27,7 +29,6 @@ BEGIN
     ('Cecil Kershaw', DATE '1972-11-01', NULL, 'Dhaka'),
     ('Gahanananda', DATE '2007-11-04', NULL, NULL)
   ) AS v(name, death_date, occupation, birth_place)
-  CROSS JOIN LATERAL (SELECT 'Imported from BornGlorious death-anniversary data. Source: BornGlorious.com; Freebase (CC BY); Wikipedia (CC BY-SA).'::text AS bio)
   WHERE NOT EXISTS (SELECT 1 FROM people p WHERE lower(p.name) = lower(v.name));
 END
 $migration$;
