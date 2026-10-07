@@ -51,9 +51,9 @@
   }
 </script>
 
-<svelte:window on:beforeunload={cleanup} />
+<svelte:window onbeforeunload={cleanup} />
 
-<form class="search" class:large method="GET" action="/people" role="search" on:submit={() => cleanup()}>
+<form class="search" class:large method="GET" action="/people" role="search" onsubmit={() => cleanup()}>
   <select name="country" bind:value={country} aria-label="Filter by country" onchange={() => query.trim() && search()}>
     <option value="">All countries</option>
     <option>Bangladesh</option>
@@ -63,14 +63,14 @@
     <option>United States</option>
   </select>
   <div class="input-wrap">
-    <input type="search" name="q" bind:value={query} {placeholder} aria-label={placeholder} autocomplete="off" on:input={search} on:focus={() => query.trim() && (open = true)} />
+    <input type="search" name="q" bind:value={query} {placeholder} aria-label={placeholder} autocomplete="off" oninput={search} onfocus={() => query.trim() && (open = true)} />
     {#if open}
       <div class="results" role="listbox" aria-label="Search results">
         {#if loading}
           <p class="status">Searching…</p>
         {:else if results.length}
           {#each results as person (person.id)}
-            <a href={`/people/${person.id}`} role="option" on:click={() => (open = false)}>
+            <a href={`/people/${person.id}`} role="option" aria-selected="false" onclick={() => (open = false)}>
               <strong>{person.name}</strong>
               {#if person.occupation}<span>{person.occupation}</span>{/if}
             </a>

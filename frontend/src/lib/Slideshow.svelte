@@ -30,6 +30,7 @@
 
 <section
   class="show"
+  role="group"
   aria-roledescription="carousel"
   onmouseenter={() => (paused = true)}
   onmouseleave={() => (paused = false)}
