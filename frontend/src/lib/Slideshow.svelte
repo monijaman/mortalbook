@@ -7,6 +7,7 @@
 
   let index = $state(0);
   let paused = $state(false);
+  const visible = $derived(Array.from({ length: Math.min(3, people.length) }, (_, offset) => people[(index + offset) % people.length]).filter(Boolean));
 
   $effect(() => {
     void index; // restart the timer after every change, including manual dot clicks
@@ -36,8 +37,7 @@
   onfocusout={() => (paused = false)}
 >
   <div class="stage">
-    {#if people[index]}
-      {@const p = people[index]}
+    {#each visible as p (p.id)}
       <article class="slide active">
         <div class="photo">
           {#if p.photo_url}
@@ -59,7 +59,7 @@
           <a class="btn" href="/people/{p.id}"><T text="Read their story" /></a>
         </div>
       </article>
-    {/if}
+    {/each}
   </div>
 
   {#if people.length > 1}
@@ -80,14 +80,13 @@
 
 <style>
   .show { margin: 0 0 3rem; }
-  .stage { display: grid; }
+  .stage { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; }
   .slide {
-    grid-area: 1 / 1; display: grid; grid-template-columns: minmax(200px, 340px) 1fr; gap: 2.2rem;
+    display: grid; grid-template-columns: 1fr; gap: 1rem;
     align-items: center; padding: 1.6rem; border: 1px solid var(--line); border-radius: 14px;
     background: linear-gradient(135deg, #17191d, #131417);
-    opacity: 0; transition: opacity 1.2s ease; pointer-events: none;
+    animation: fade-in 1.2s ease;
   }
-  .slide.active { opacity: 1; pointer-events: auto; }
   .photo { aspect-ratio: 3 / 4; background: #0b0c0e; border-radius: 10px; overflow: hidden; }
   img { width: 100%; height: 100%; object-fit: cover; filter: grayscale(0.75) contrast(0.95); }
   .placeholder { height: 100%; display: grid; place-items: center; font-size: 4rem; color: var(--muted); }
@@ -99,11 +98,12 @@
   .dot { width: 10px; height: 10px; padding: 0; border-radius: 50%; border: 1px solid var(--muted); background: transparent; }
   .dot:hover { background: var(--muted); color: inherit; }
   .dot.on { background: var(--accent); border-color: var(--accent); }
+  @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
   @media (max-width: 720px) {
-    .slide { grid-template-columns: 1fr; gap: 1rem; }
+    .stage { grid-template-columns: 1fr; }
     .photo { aspect-ratio: 4 / 3; max-height: 280px; }
   }
   @media (prefers-reduced-motion: reduce) {
-    .slide { transition: none; }
+    .slide { animation: none; }
   }
 </style>

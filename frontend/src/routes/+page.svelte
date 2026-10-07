@@ -13,6 +13,29 @@
   let failed = $state(false);
   let today = $state(new Date());
 
+  function locationHints() {
+    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+    const locale = navigator.language || '';
+    const city = timezone.split('/').pop()?.replaceAll('_', ' ') || '';
+    const region = locale.match(/[-_]([A-Z]{2})$/i)?.[1]?.toUpperCase() || '';
+    const countryNames = { BD: 'Bangladesh', IN: 'India', PK: 'Pakistan', NP: 'Nepal', LK: 'Sri Lanka', BT: 'Bhutan', MM: 'Myanmar' };
+    const country = countryNames[region] || '';
+    const subcontinent = ['Bangladesh', 'India', 'Pakistan', 'Nepal', 'Sri Lanka', 'Bhutan', 'Myanmar'].includes(country) ? 'South Asia' : '';
+    return [city, country, subcontinent, timezone.split('/')[0]].filter(Boolean).map((term) => term.toLowerCase());
+  }
+
+  function sortByLocation(items) {
+    const hints = locationHints();
+    return [...items].sort((a, b) => {
+      const score = (person) => {
+        const place = `${person.death_place || ''} ${person.birth_place || ''}`.toLowerCase();
+        const rank = hints.findIndex((hint) => place.includes(hint));
+        return rank < 0 ? hints.length : rank;
+      };
+      return score(a) - score(b) || new Date(b.death_date) - new Date(a.death_date) || a.name.localeCompare(b.name);
+    });
+  }
+
   onMount(async () => {
     // use the visitor's local date, not the server's
     today = new Date();
@@ -20,7 +43,7 @@
     try {
       const [t, w] = await Promise.all([fetch(`/api/people/today?${md}`), fetch(`/api/people/week?${md}`)]);
       if (!t.ok) throw new Error();
-      people = await t.json();
+      people = sortByLocation(await t.json());
       if (w.ok) ({ upcoming, recent } = await w.json());
     } catch {
       failed = true;
