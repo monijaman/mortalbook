@@ -141,6 +141,7 @@ pub async fn week(
 #[derive(Deserialize)]
 pub struct ListQuery {
     q: Option<String>,
+    country: Option<String>,
     limit: Option<i64>,
     offset: Option<i64>,
 }
@@ -150,20 +151,27 @@ pub async fn list(
     Query(q): Query<ListQuery>,
 ) -> Result<Json<Value>, AppError> {
     let search = q.q.map(|t| t.trim().to_string()).filter(|t| !t.is_empty());
+    let country = q.country.map(|t| t.trim().to_string()).filter(|t| !t.is_empty());
     let limit = q.limit.unwrap_or(24).clamp(1, 100);
     let offset = q.offset.unwrap_or(0).max(0);
     let total: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM people WHERE ($1::text IS NULL OR (name ILIKE '%' || $1 || '%' OR occupation ILIKE '%' || $1 || '%'))",
+        "SELECT COUNT(*) FROM people WHERE ($1::text IS NULL OR (name ILIKE '%' || $1 || '%' OR occupation ILIKE '%' || $1 || '%'))
+         AND ($2::text IS NULL OR birth_place ILIKE '%' || $2 || '%' OR death_place ILIKE '%' || $2 || '%'
+              OR ($2 = 'Bangladesh' AND COALESCE(birth_place, '') ILIKE ANY(ARRAY['%Dhaka%','%Chittagong%','%Sylhet%','%Khulna%','%Barisal%','%Rajshahi%','%Rangpur%','%Mymensingh%','%Tangail%','%Pabna%','%Faridpur%','%Gazipur%','%Kishoreganj%','%Narayanganj%','%Bogra%','%Bangladesh%'])))",
     )
     .bind(&search)
+    .bind(&country)
     .fetch_one(&s.db)
     .await?;
     let people = sqlx::query_as::<_, Person>(&format!(
         "SELECT {PERSON_COLS} FROM people
          WHERE ($1::text IS NULL OR (name ILIKE '%' || $1 || '%' OR occupation ILIKE '%' || $1 || '%'))
+           AND ($2::text IS NULL OR birth_place ILIKE '%' || $2 || '%' OR death_place ILIKE '%' || $2 || '%'
+                OR ($2 = 'Bangladesh' AND COALESCE(birth_place, '') ILIKE ANY(ARRAY['%Dhaka%','%Chittagong%','%Sylhet%','%Khulna%','%Barisal%','%Rajshahi%','%Rangpur%','%Mymensingh%','%Tangail%','%Pabna%','%Faridpur%','%Gazipur%','%Kishoreganj%','%Narayanganj%','%Bogra%','%Bangladesh%'])))
          ORDER BY death_date DESC, name, id LIMIT $2 OFFSET $3"
     ))
     .bind(&search)
+    .bind(&country)
     .bind(limit)
     .bind(offset)
     .fetch_all(&s.db)

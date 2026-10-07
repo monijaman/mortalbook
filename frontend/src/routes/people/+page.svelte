@@ -6,13 +6,13 @@
 
   let { data } = $props();
 
-  const href = (n) => `/people?${new URLSearchParams({ ...(data.q ? { q: data.q } : {}), page: String(n) })}`;
+  const href = (n) => `/people?${new URLSearchParams({ ...(data.q ? { q: data.q } : {}), ...(data.country ? { country: data.country } : {}), page: String(n) })}`;
 </script>
 
 <svelte:head><title>Remembered — Mortalbook</title></svelte:head>
 
 <h1><T text="Remembered" /></h1>
-<div class="find"><SearchBox value={data.q} /></div>
+<div class="find"><SearchBox value={data.q} country={data.country} /></div>
 
 {#if data.people.length === 0}
   <p class="muted"><T text="No one found." /></p>

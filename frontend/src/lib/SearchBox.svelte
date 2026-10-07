@@ -1,8 +1,9 @@
 <script>
   import { lang, dict, key, want } from '$lib/i18n.js';
 
-  let { value = '', large = false } = $props();
+  let { value = '', country: initialCountry = '', large = false } = $props();
   let query = $state(value);
+  let country = $state(initialCountry);
   let results = $state([]);
   let open = $state(false);
   let loading = $state(false);
@@ -32,7 +33,7 @@
       loading = true;
       open = true;
       try {
-        const res = await fetch(`/api/people?limit=8&offset=0&q=${encodeURIComponent(q)}`, {
+        const res = await fetch(`/api/people?limit=8&offset=0&q=${encodeURIComponent(q)}&country=${encodeURIComponent(country)}`, {
           signal: request.signal
         });
         if (res.ok) results = (await res.json()).items ?? [];
@@ -53,6 +54,14 @@
 <svelte:window on:beforeunload={cleanup} />
 
 <form class="search" class:large method="GET" action="/people" role="search" on:submit={() => cleanup()}>
+  <select name="country" bind:value={country} aria-label="Filter by country" onchange={() => query.trim() && search()}>
+    <option value="">All countries</option>
+    <option>Bangladesh</option>
+    <option>India</option>
+    <option>Pakistan</option>
+    <option>United Kingdom</option>
+    <option>United States</option>
+  </select>
   <div class="input-wrap">
     <input type="search" name="q" bind:value={query} {placeholder} aria-label={placeholder} autocomplete="off" on:input={search} on:focus={() => query.trim() && (open = true)} />
     {#if open}
@@ -66,7 +75,7 @@
               {#if person.occupation}<span>{person.occupation}</span>{/if}
             </a>
           {/each}
-          <a class="all" href={`/people?q=${encodeURIComponent(query.trim())}`}>See all results →</a>
+          <a class="all" href={`/people?q=${encodeURIComponent(query.trim())}&country=${encodeURIComponent(country)}`}>See all results →</a>
         {:else}
           <p class="status">No results found.</p>
         {/if}
@@ -76,8 +85,9 @@
 </form>
 
 <style>
-  .search { max-width: 560px; }
+  .search { display: flex; gap: .6rem; max-width: 760px; }
   .search.large { max-width: 760px; margin: 0 auto; }
+  select { flex: 0 0 150px; border-radius: 999px; padding: 0 .9rem; }
   .input-wrap { position: relative; }
   input { width: 100%; box-sizing: border-box; }
   .results {
@@ -96,6 +106,7 @@
     background: rgba(23, 25, 29, 0.9); box-shadow: 0 0 0 4px rgba(185, 167, 121, 0.08);
   }
   @media (max-width: 520px) {
+    select { flex-basis: 120px; }
     .large input { font-size: 1.1rem; padding: 0.8rem 1.1rem; }
   }
 </style>
