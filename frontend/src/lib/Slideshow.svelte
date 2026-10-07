@@ -36,8 +36,9 @@
   onfocusout={() => (paused = false)}
 >
   <div class="stage">
-    {#each people as p, i (p.id)}
-      <article class="slide" class:active={i === index} inert={i !== index} aria-hidden={i !== index}>
+    {#if people[index]}
+      {@const p = people[index]}
+      <article class="slide active">
         <div class="photo">
           {#if p.photo_url}
             <img src={p.photo_url} alt={p.name} />
@@ -58,7 +59,7 @@
           <a class="btn" href="/people/{p.id}"><T text="Read their story" /></a>
         </div>
       </article>
-    {/each}
+    {/if}
   </div>
 
   {#if people.length > 1}

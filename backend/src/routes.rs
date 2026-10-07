@@ -50,7 +50,7 @@ pub async fn today(
          WHERE death_precision = 'day'
            AND ((EXTRACT(MONTH FROM death_date)::int = $1 AND EXTRACT(DAY FROM death_date)::int = $2)
              OR ($3 AND EXTRACT(MONTH FROM death_date)::int = 2 AND EXTRACT(DAY FROM death_date)::int = 29))
-         ORDER BY death_date, name"
+         ORDER BY death_date DESC, name"
     ))
     .bind(month as i32)
     .bind(day as i32)
@@ -161,7 +161,7 @@ pub async fn list(
     let people = sqlx::query_as::<_, Person>(&format!(
         "SELECT {PERSON_COLS} FROM people
          WHERE ($1::text IS NULL OR (name ILIKE '%' || $1 || '%' OR occupation ILIKE '%' || $1 || '%'))
-         ORDER BY name, id LIMIT $2 OFFSET $3"
+         ORDER BY death_date DESC, name, id LIMIT $2 OFFSET $3"
     ))
     .bind(&search)
     .bind(limit)
