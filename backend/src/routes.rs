@@ -156,8 +156,10 @@ pub async fn list(
     let offset = q.offset.unwrap_or(0).max(0);
     let total: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM people WHERE ($1::text IS NULL OR (name ILIKE '%' || $1 || '%' OR occupation ILIKE '%' || $1 || '%'))
-         AND ($2::text IS NULL OR birth_place ILIKE '%' || $2 || '%' OR death_place ILIKE '%' || $2 || '%'
-              OR ($2 = 'Bangladesh' AND COALESCE(birth_place, '') ILIKE ANY(ARRAY['%Dhaka%','%Chittagong%','%Sylhet%','%Khulna%','%Barisal%','%Rajshahi%','%Rangpur%','%Mymensingh%','%Tangail%','%Pabna%','%Faridpur%','%Gazipur%','%Kishoreganj%','%Narayanganj%','%Bogra%','%Bangladesh%'])))",
+         AND ($2::text IS NULL OR concat_ws(' ', birth_place, death_place) ILIKE '%' || $2 || '%'
+              OR ($2 = 'Bangladesh' AND concat_ws(' ', birth_place, death_place) ILIKE ANY(ARRAY['%Dhaka%','%Chittagong%','%Sylhet%','%Khulna%','%Barisal%','%Rajshahi%','%Rangpur%','%Mymensingh%','%Tangail%','%Pabna%','%Faridpur%','%Gazipur%','%Kishoreganj%','%Narayanganj%','%Bogra%','%Bangladesh%']))
+              OR ($2 = 'India' AND concat_ws(' ', birth_place, death_place) ILIKE ANY(ARRAY['%India%','%Kolkata%','%Calcutta%','%West Bengal%','%Bihar%','%Murshidabad%','%Midnapore%']))
+              OR ($2 = 'Pakistan' AND concat_ws(' ', birth_place, death_place) ILIKE ANY(ARRAY['%Pakistan%','%Lahore%','%Karachi%','%Punjab%'])))",
     )
     .bind(&search)
     .bind(&country)
@@ -166,8 +168,10 @@ pub async fn list(
     let people = sqlx::query_as::<_, Person>(&format!(
         "SELECT {PERSON_COLS} FROM people
          WHERE ($1::text IS NULL OR (name ILIKE '%' || $1 || '%' OR occupation ILIKE '%' || $1 || '%'))
-           AND ($2::text IS NULL OR birth_place ILIKE '%' || $2 || '%' OR death_place ILIKE '%' || $2 || '%'
-                OR ($2 = 'Bangladesh' AND COALESCE(birth_place, '') ILIKE ANY(ARRAY['%Dhaka%','%Chittagong%','%Sylhet%','%Khulna%','%Barisal%','%Rajshahi%','%Rangpur%','%Mymensingh%','%Tangail%','%Pabna%','%Faridpur%','%Gazipur%','%Kishoreganj%','%Narayanganj%','%Bogra%','%Bangladesh%'])))
+           AND ($2::text IS NULL OR concat_ws(' ', birth_place, death_place) ILIKE '%' || $2 || '%'
+                OR ($2 = 'Bangladesh' AND concat_ws(' ', birth_place, death_place) ILIKE ANY(ARRAY['%Dhaka%','%Chittagong%','%Sylhet%','%Khulna%','%Barisal%','%Rajshahi%','%Rangpur%','%Mymensingh%','%Tangail%','%Pabna%','%Faridpur%','%Gazipur%','%Kishoreganj%','%Narayanganj%','%Bogra%','%Bangladesh%']))
+                OR ($2 = 'India' AND concat_ws(' ', birth_place, death_place) ILIKE ANY(ARRAY['%India%','%Kolkata%','%Calcutta%','%West Bengal%','%Bihar%','%Murshidabad%','%Midnapore%']))
+                OR ($2 = 'Pakistan' AND concat_ws(' ', birth_place, death_place) ILIKE ANY(ARRAY['%Pakistan%','%Lahore%','%Karachi%','%Punjab%'])))
          ORDER BY death_date DESC, name, id LIMIT $2 OFFSET $3"
     ))
     .bind(&search)

@@ -20,7 +20,7 @@
   function search() {
     clearTimeout(timer);
     const q = query.trim();
-    if (!q) {
+    if (!q && !country) {
       results = [];
       open = false;
       loading = false;
@@ -54,14 +54,17 @@
 <svelte:window onbeforeunload={cleanup} />
 
 <form class="search" class:large method="GET" action="/people" role="search" onsubmit={() => cleanup()}>
-  <select name="country" bind:value={country} aria-label="Filter by country" onchange={() => query.trim() && search()}>
+  <label class="country-filter">
+    <span>Country</span>
+    <select name="country" bind:value={country} aria-label="Filter by country" onchange={search}>
     <option value="">All countries</option>
     <option>Bangladesh</option>
     <option>India</option>
     <option>Pakistan</option>
     <option>United Kingdom</option>
     <option>United States</option>
-  </select>
+    </select>
+  </label>
   <div class="input-wrap">
     <input type="search" name="q" bind:value={query} {placeholder} aria-label={placeholder} autocomplete="off" oninput={search} onfocus={() => query.trim() && (open = true)} />
     {#if open}
@@ -87,7 +90,9 @@
 <style>
   .search { display: flex; gap: .6rem; max-width: 760px; }
   .search.large { max-width: 760px; margin: 0 auto; }
-  select { flex: 0 0 150px; border-radius: 999px; padding: 0 .9rem; }
+  .country-filter { display: flex; align-items: center; gap: .4rem; flex: 0 0 auto; color: var(--muted); font-size: .8rem; }
+  .country-filter span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  select { min-height: 3rem; border-radius: 999px; padding: 0 .9rem; color: inherit; background: rgba(23, 25, 29, 0.9); border-color: var(--line); }
   .input-wrap { position: relative; }
   input { width: 100%; box-sizing: border-box; }
   .results {
@@ -106,7 +111,7 @@
     background: rgba(23, 25, 29, 0.9); box-shadow: 0 0 0 4px rgba(185, 167, 121, 0.08);
   }
   @media (max-width: 520px) {
-    select { flex-basis: 120px; }
+    select { min-height: 2.7rem; max-width: 130px; }
     .large input { font-size: 1.1rem; padding: 0.8rem 1.1rem; }
   }
 </style>
