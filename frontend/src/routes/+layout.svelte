@@ -15,6 +15,16 @@
   });
 </script>
 
+<svelte:head>
+  <meta name="description" content="Mortalbook is a place to remember people who have passed away. Discover their lives, stories, and anniversaries." />
+  <meta name="application-name" content="Mortalbook" />
+  <meta property="og:site_name" content="Mortalbook" />
+  <meta property="og:type" content="website" />
+  <meta property="og:image" content="https://mortalbook.com/og-image.svg" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:image" content="https://mortalbook.com/og-image.svg" />
+</svelte:head>
+
 <header>
   <a class="brand" href="/">✦ Mortalbook</a>
   <nav>

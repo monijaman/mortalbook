@@ -6,13 +6,14 @@
   import SearchBox from '$lib/SearchBox.svelte';
   import { lang } from '$lib/i18n.js';
   import { selectedCountry } from '$lib/country.js';
+  import { canonicalUrl, DEFAULT_DESCRIPTION, DEFAULT_IMAGE, jsonLd } from '$lib/seo.js';
 
-  let people = $state([]);
-  let upcoming = $state([]);
-  let recent = $state([]);
-  let loading = $state(true);
-  let failed = $state(false);
-  let today = $state(new Date());
+  let people = $state(data.people);
+  let upcoming = $state(data.upcoming);
+  let recent = $state(data.recent);
+  let loading = $state(false);
+  let failed = $state(data.failed);
+  let today = $state(new Date(`${data.date}T12:00:00`));
 
   function locationHints() {
     const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
@@ -86,7 +87,29 @@
   const dateLabel = $derived(today.toLocaleDateString($lang, { month: 'long', day: 'numeric' }));
 </script>
 
-<svelte:head><title>Mortalbook — remembered today</title></svelte:head>
+<svelte:head>
+  <title>Mortalbook — Remembered Today</title>
+  <link rel="canonical" href={canonicalUrl('/')} />
+  <meta name="description" content={DEFAULT_DESCRIPTION} />
+  <meta property="og:title" content="Mortalbook — Remembered Today" />
+  <meta property="og:description" content={DEFAULT_DESCRIPTION} />
+  <meta property="og:url" content={canonicalUrl('/')} />
+  <meta property="og:image" content={DEFAULT_IMAGE} />
+  <meta name="twitter:title" content="Mortalbook — Remembered Today" />
+  <meta name="twitter:description" content={DEFAULT_DESCRIPTION} />
+  <script type="application/ld+json">{@html jsonLd({
+    '@context': 'https://schema.org',
+    '@type': 'WebSite',
+    name: 'Mortalbook',
+    url: canonicalUrl('/'),
+    description: DEFAULT_DESCRIPTION,
+    potentialAction: {
+      '@type': 'SearchAction',
+      target: `${canonicalUrl('/people')}?q={search_term_string}`,
+      'query-input': 'required name=search_term_string'
+    }
+  })}</script>
+</svelte:head>
 
 <section class="hero">
   <p class="eyebrow"><T text="Remembered on this day" /></p>

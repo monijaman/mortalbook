@@ -25,7 +25,10 @@
   }
 </script>
 
-<svelte:head><title>Add a person — Mortalbook</title></svelte:head>
+<svelte:head>
+  <title>Add a Person — Mortalbook</title>
+  <meta name="robots" content="noindex,nofollow" />
+</svelte:head>
 
 <h1><T text="Add someone you remember" /></h1>
 <p class="muted"><T text="Write in any language — visitors will read it in their own." /></p>

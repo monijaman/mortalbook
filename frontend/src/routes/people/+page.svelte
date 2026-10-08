@@ -5,13 +5,14 @@
   import Pagination from '$lib/Pagination.svelte';
   import SearchBox from '$lib/SearchBox.svelte';
   import { selectedCountry } from '$lib/country.js';
+  import { canonicalUrl, DEFAULT_DESCRIPTION } from '$lib/seo.js';
 
   let { data } = $props();
 
   let people = $state(untrack(() => data.people));
   let total = $state(untrack(() => data.total));
   let pages = $state(untrack(() => data.pages));
-  let loading = $state(true);
+  let loading = $state(false);
   let failed = $state(false);
   const href = (n) => `/people?${new URLSearchParams({ ...(data.q ? { q: data.q } : {}), ...($selectedCountry ? { country: $selectedCountry } : {}), page: String(n) })}`;
 
@@ -52,7 +53,18 @@
   });
 </script>
 
-<svelte:head><title>Remembered — Mortalbook</title></svelte:head>
+<svelte:head>
+  <title>Remembered People — Mortalbook</title>
+  <link rel="canonical" href={canonicalUrl('/people')} />
+  <meta name="description" content={DEFAULT_DESCRIPTION} />
+  <meta property="og:title" content="Remembered People — Mortalbook" />
+  <meta property="og:description" content={DEFAULT_DESCRIPTION} />
+  <meta property="og:url" content={canonicalUrl('/people')} />
+  <meta name="twitter:title" content="Remembered People — Mortalbook" />
+  {#if data.q || data.country || data.page > 1 || data.total === 0}
+    <meta name="robots" content="noindex,follow" />
+  {/if}
+</svelte:head>
 
 <h1><T text="Remembered" /></h1>
 <div class="find"><SearchBox value={data.q} /></div>

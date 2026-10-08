@@ -2,6 +2,7 @@
   import T from '$lib/T.svelte';
   import { lang } from '$lib/i18n.js';
   import { dateLabel, ageAt, embedUrl } from '$lib/format.js';
+  import { canonicalUrl, DEFAULT_IMAGE, jsonLd, personDescription } from '$lib/seo.js';
 
   let { data } = $props();
   const p = $derived(data.person);
@@ -13,9 +14,37 @@
     p.birth_date && exact(p.birth_precision) && exact(p.death_precision) ? ageAt(p.birth_date, p.death_date) : null
   );
   const paragraphs = $derived(p.bio.split(/\n{2,}/).filter((s) => s.trim()));
+  const description = $derived(personDescription(p));
+  const url = $derived(canonicalUrl(`/people/${p.id}`));
+  const structuredData = $derived({
+    '@context': 'https://schema.org',
+    '@type': 'Person',
+    name: p.name,
+    description,
+    url,
+    ...(p.birth_date && { birthDate: p.birth_date }),
+    deathDate: p.death_date,
+    ...(p.birth_place && { birthPlace: { '@type': 'Place', name: p.birth_place } }),
+    ...(p.death_place && { deathPlace: { '@type': 'Place', name: p.death_place } }),
+    ...(p.occupation && { jobTitle: p.occupation }),
+    ...(p.photo_url && { image: new URL(p.photo_url, 'https://mortalbook.com').href })
+  });
 </script>
 
-<svelte:head><title>{p.name} — Mortalbook</title></svelte:head>
+<svelte:head>
+  <title>{p.name} — Mortalbook Memorial</title>
+  <link rel="canonical" href={url} />
+  <meta name="description" content={description} />
+  <meta property="og:type" content="profile" />
+  <meta property="og:title" content="{p.name} — Mortalbook Memorial" />
+  <meta property="og:description" content={description} />
+  <meta property="og:url" content={url} />
+  <meta property="og:image" content={p.photo_url ? new URL(p.photo_url, 'https://mortalbook.com').href : DEFAULT_IMAGE} />
+  <meta name="twitter:title" content="{p.name} — Mortalbook Memorial" />
+  <meta name="twitter:description" content={description} />
+  <meta name="twitter:image" content={p.photo_url ? new URL(p.photo_url, 'https://mortalbook.com').href : DEFAULT_IMAGE} />
+  <script type="application/ld+json">{@html jsonLd(structuredData)}</script>
+</svelte:head>
 
 <a class="back" href="/people">← <T text="Remembered" /></a>
 
