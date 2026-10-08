@@ -13,7 +13,7 @@
   let pages = $state(untrack(() => data.pages));
   let loading = $state(true);
   let failed = $state(false);
-  const href = (n) => `/people?${new URLSearchParams({ ...(data.q ? { q: data.q } : {}), page: String(n) })}`;
+  const href = (n) => `/people?${new URLSearchParams({ ...(data.q ? { q: data.q } : {}), ...($selectedCountry ? { country: $selectedCountry } : {}), page: String(n) })}`;
 
   $effect(() => {
     const country = $selectedCountry;

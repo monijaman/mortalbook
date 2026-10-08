@@ -1,9 +1,18 @@
 <script>
+  import { afterNavigate } from '$app/navigation';
+  import { get } from 'svelte/store';
   import '../app.css';
   import T from '$lib/T.svelte';
   import LanguagePicker from '$lib/LanguagePicker.svelte';
+  import { selectedCountry, syncCountryUrl } from '$lib/country.js';
 
   let { children } = $props();
+
+  afterNavigate(({ to }) => {
+    const urlCountry = to.url.searchParams.get('country');
+    if (urlCountry !== null) selectedCountry.set(urlCountry);
+    else syncCountryUrl(get(selectedCountry));
+  });
 </script>
 
 <header>

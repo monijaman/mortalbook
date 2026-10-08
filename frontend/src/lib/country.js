@@ -1,4 +1,5 @@
 import { browser } from '$app/environment';
+import { replaceState } from '$app/navigation';
 import { writable } from 'svelte/store';
 
 const STORAGE_KEY = 'mortalbook-country';
@@ -25,6 +26,9 @@ function loadCountryPreference() {
   if (!browser) return '';
 
   try {
+    const urlCountry = new URL(window.location.href).searchParams.get('country');
+    if (urlCountry !== null) return urlCountry;
+
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved !== null) return saved;
 
@@ -39,15 +43,21 @@ function loadCountryPreference() {
 
 export const selectedCountry = writable(loadCountryPreference());
 
+export function syncCountryUrl(country) {
+  if (!browser) return;
+
+  const url = new URL(window.location.href);
+  if (country) url.searchParams.set('country', country);
+  else url.searchParams.delete('country');
+
+  if (url.href !== window.location.href) replaceState(url, {});
+}
+
 if (browser) {
-  let skipInitialSave = true;
   selectedCountry.subscribe((country) => {
-    if (skipInitialSave) {
-      skipInitialSave = false;
-      return;
-    }
     try {
-      localStorage.setItem(STORAGE_KEY, country);
+      if (country) localStorage.setItem(STORAGE_KEY, country);
+      else localStorage.removeItem(STORAGE_KEY);
     } catch (error) {
       console.error('Unable to save the country preference.', error);
     }

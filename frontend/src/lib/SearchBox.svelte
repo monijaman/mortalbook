@@ -1,7 +1,7 @@
 <script>
   import { untrack } from 'svelte';
   import { lang, dict, key, want } from '$lib/i18n.js';
-  import { selectedCountry } from '$lib/country.js';
+  import { selectedCountry, syncCountryUrl } from '$lib/country.js';
 
   let { value = '', large = false } = $props();
   let query = $state(untrack(() => value));
@@ -51,6 +51,7 @@
     results = [];
     open = false;
     loading = false;
+    syncCountryUrl($selectedCountry);
   }
 
   function cleanup() {
