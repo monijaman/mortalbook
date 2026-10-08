@@ -1,4 +1,5 @@
 <script>
+  import { untrack } from 'svelte';
   import { onMount } from 'svelte';
   import T from '$lib/T.svelte';
   import PersonCard from '$lib/PersonCard.svelte';
@@ -8,12 +9,13 @@
   import { selectedCountry } from '$lib/country.js';
   import { canonicalUrl, DEFAULT_DESCRIPTION, DEFAULT_IMAGE, jsonLd } from '$lib/seo.js';
 
-  let people = $state(data.people);
-  let upcoming = $state(data.upcoming);
-  let recent = $state(data.recent);
+  let { data } = $props();
+  let people = $state(untrack(() => data.people));
+  let upcoming = $state(untrack(() => data.upcoming));
+  let recent = $state(untrack(() => data.recent));
   let loading = $state(false);
-  let failed = $state(data.failed);
-  let today = $state(new Date(`${data.date}T12:00:00`));
+  let failed = $state(untrack(() => data.failed));
+  let today = $state(untrack(() => new Date(`${data.date}T12:00:00`)));
 
   function locationHints() {
     const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
