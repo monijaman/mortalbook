@@ -1,4 +1,5 @@
 <script>
+  import { goto } from '$app/navigation';
   import { lang, dict, key, want } from '$lib/i18n.js';
 
   let { value = '', country: initialCountry = '', large = false } = $props();
@@ -45,6 +46,19 @@
     }, 300);
   }
 
+  function selectCountry(event) {
+    country = event.currentTarget.value;
+    cleanup();
+    results = [];
+    open = false;
+    loading = false;
+
+    const params = new URLSearchParams();
+    if (query.trim()) params.set('q', query.trim());
+    if (country) params.set('country', country);
+    goto(`/people${params.size ? `?${params}` : ''}`);
+  }
+
   function cleanup() {
     clearTimeout(timer);
     request?.abort();
@@ -56,7 +70,7 @@
 <form class="search" class:large method="GET" action="/people" role="search" onsubmit={() => cleanup()}>
   <label class="country-filter">
     <span>Country</span>
-    <select name="country" bind:value={country} aria-label="Filter by country" onchange={search}>
+    <select name="country" bind:value={country} aria-label="Filter by country" onchange={selectCountry}>
     <option value="">All countries</option>
     <option>Bangladesh</option>
     <option>India</option>
