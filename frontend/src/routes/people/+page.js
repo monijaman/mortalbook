@@ -1,3 +1,5 @@
+import { error } from '@sveltejs/kit';
+
 const PAGE_SIZE = 20;
 
 export async function load({ fetch, url }) {
@@ -7,7 +9,8 @@ export async function load({ fetch, url }) {
   const res = await fetch(
     `/api/people?limit=${PAGE_SIZE}&offset=${(page - 1) * PAGE_SIZE}&q=${encodeURIComponent(q)}&country=${encodeURIComponent(country)}`
   );
-  const data = res.ok ? await res.json() : { items: [], total: 0 };
+  if (!res.ok) error(res.status, 'Unable to load people right now. Please try again later.');
+  const data = await res.json();
   return {
     q,
     country,

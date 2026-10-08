@@ -138,6 +138,50 @@ pub async fn week(
     Ok(Json(json!({ "upcoming": upcoming, "recent": recent })))
 }
 
+fn country_place_patterns(country: &str) -> Vec<String> {
+    let terms: &[&str] = match country.to_ascii_lowercase().as_str() {
+        "bangladesh" => &[
+            "Bangladesh", "Dhaka", "Chittagong", "Chattogram", "Sylhet", "Khulna", "Barisal",
+            "Rajshahi", "Rangpur", "Mymensingh", "Tangail", "Pabna", "Faridpur", "Gazipur",
+            "Kishoreganj", "Narayanganj", "Bogra",
+        ],
+        "india" => &[
+            "India", "Kolkata", "Calcutta", "West Bengal", "Bihar", "Murshidabad", "Midnapore",
+            "Delhi", "Mumbai", "Bombay", "Chennai", "Madras", "Maharashtra", "Gujarat",
+            "Uttar Pradesh", "Allahabad", "Hyderabad",
+        ],
+        "pakistan" => &[
+            "Pakistan", "Lahore", "Karachi", "Punjab", "Islamabad", "Rawalpindi", "Peshawar",
+            "Sindh", "Quetta",
+        ],
+        "united kingdom" => &[
+            "United Kingdom", "Great Britain", "Britain", "England", "Scotland", "Wales",
+            "London", "Oxford", "Cambridge", "Manchester", "Liverpool",
+        ],
+        "united states" => &[
+            "United States", "USA", "U.S.", "New York", "Washington", "California", "Chicago",
+            "Boston",
+        ],
+        _ => return vec![format!("%{country}%")],
+    };
+    terms.iter().map(|term| format!("%{term}%")).collect()
+}
+
+fn nearby_country_patterns(country: &str) -> Vec<String> {
+    let nearby: &[&str] = match country.to_ascii_lowercase().as_str() {
+        "bangladesh" => &["India"],
+        "india" => &["Bangladesh", "Pakistan"],
+        "pakistan" => &["India"],
+        "united kingdom" => &["Ireland", "France"],
+        "united states" => &["Canada", "Mexico"],
+        _ => return Vec::new(),
+    };
+    nearby
+        .iter()
+        .flat_map(|country| country_place_patterns(country))
+        .collect()
+}
+
 #[derive(Deserialize)]
 pub struct ListQuery {
     q: Option<String>,
@@ -154,28 +198,45 @@ pub async fn list(
     let country = q.country.map(|t| t.trim().to_string()).filter(|t| !t.is_empty());
     let limit = q.limit.unwrap_or(24).clamp(1, 100);
     let offset = q.offset.unwrap_or(0).max(0);
+
+    let mut country_patterns = country.as_deref().map(country_place_patterns);
+    if let Some(patterns) = &country_patterns {
+        let exact_total: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM people
+             WHERE ($1::text IS NULL OR (name ILIKE '%' || $1 || '%' OR occupation ILIKE '%' || $1 || '%'))
+               AND concat_ws(' ', birth_place, death_place) ILIKE ANY($2)",
+        )
+        .bind(&search)
+        .bind(patterns)
+        .fetch_one(&s.db)
+        .await?;
+        if exact_total == 0 {
+            if let Some(selected_country) = country.as_deref() {
+                let nearby_patterns = nearby_country_patterns(selected_country);
+                if !nearby_patterns.is_empty() {
+                    country_patterns = Some(nearby_patterns);
+                }
+            }
+        }
+    }
+
     let total: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM people WHERE ($1::text IS NULL OR (name ILIKE '%' || $1 || '%' OR occupation ILIKE '%' || $1 || '%'))
-         AND ($2::text IS NULL OR concat_ws(' ', birth_place, death_place) ILIKE '%' || $2 || '%'
-              OR ($2 = 'Bangladesh' AND concat_ws(' ', birth_place, death_place) ILIKE ANY(ARRAY['%Dhaka%','%Chittagong%','%Sylhet%','%Khulna%','%Barisal%','%Rajshahi%','%Rangpur%','%Mymensingh%','%Tangail%','%Pabna%','%Faridpur%','%Gazipur%','%Kishoreganj%','%Narayanganj%','%Bogra%','%Bangladesh%']))
-              OR ($2 = 'India' AND concat_ws(' ', birth_place, death_place) ILIKE ANY(ARRAY['%India%','%Kolkata%','%Calcutta%','%West Bengal%','%Bihar%','%Murshidabad%','%Midnapore%']))
-              OR ($2 = 'Pakistan' AND concat_ws(' ', birth_place, death_place) ILIKE ANY(ARRAY['%Pakistan%','%Lahore%','%Karachi%','%Punjab%'])))",
+        "SELECT COUNT(*) FROM people
+         WHERE ($1::text IS NULL OR (name ILIKE '%' || $1 || '%' OR occupation ILIKE '%' || $1 || '%'))
+           AND ($2::text[] IS NULL OR concat_ws(' ', birth_place, death_place) ILIKE ANY($2))",
     )
     .bind(&search)
-    .bind(&country)
+    .bind(&country_patterns)
     .fetch_one(&s.db)
     .await?;
     let people = sqlx::query_as::<_, Person>(&format!(
         "SELECT {PERSON_COLS} FROM people
          WHERE ($1::text IS NULL OR (name ILIKE '%' || $1 || '%' OR occupation ILIKE '%' || $1 || '%'))
-           AND ($2::text IS NULL OR concat_ws(' ', birth_place, death_place) ILIKE '%' || $2 || '%'
-                OR ($2 = 'Bangladesh' AND concat_ws(' ', birth_place, death_place) ILIKE ANY(ARRAY['%Dhaka%','%Chittagong%','%Sylhet%','%Khulna%','%Barisal%','%Rajshahi%','%Rangpur%','%Mymensingh%','%Tangail%','%Pabna%','%Faridpur%','%Gazipur%','%Kishoreganj%','%Narayanganj%','%Bogra%','%Bangladesh%']))
-                OR ($2 = 'India' AND concat_ws(' ', birth_place, death_place) ILIKE ANY(ARRAY['%India%','%Kolkata%','%Calcutta%','%West Bengal%','%Bihar%','%Murshidabad%','%Midnapore%']))
-                OR ($2 = 'Pakistan' AND concat_ws(' ', birth_place, death_place) ILIKE ANY(ARRAY['%Pakistan%','%Lahore%','%Karachi%','%Punjab%'])))
-         ORDER BY death_date DESC, name, id LIMIT $2 OFFSET $3"
+           AND ($2::text[] IS NULL OR concat_ws(' ', birth_place, death_place) ILIKE ANY($2))
+         ORDER BY death_date DESC, name, id LIMIT $3 OFFSET $4"
     ))
     .bind(&search)
-    .bind(&country)
+    .bind(&country_patterns)
     .bind(limit)
     .bind(offset)
     .fetch_all(&s.db)

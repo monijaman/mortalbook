@@ -93,7 +93,7 @@
   .country-filter { display: flex; align-items: center; gap: .4rem; flex: 0 0 auto; color: var(--muted); font-size: .8rem; }
   .country-filter span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
   select { min-height: 3rem; border-radius: 999px; padding: 0 .9rem; color: inherit; background: rgba(23, 25, 29, 0.9); border-color: var(--line); }
-  .input-wrap { position: relative; }
+  .input-wrap { position: relative; flex: 1; min-width: 0; }
   input { width: 100%; box-sizing: border-box; }
   .results {
     position: absolute; z-index: 5; top: calc(100% + 0.6rem); left: 0; right: 0; overflow: hidden;
@@ -107,7 +107,7 @@
   .status { margin: 0; padding: .9rem 1rem; }
   .results .all { border-top: 1px solid var(--line); color: var(--accent); }
   .large input {
-    font-size: 1.35rem; padding: 1rem 1.4rem; border-radius: 999px; border-color: var(--accent);
+    min-height: 3.75rem; font-size: 1.35rem; padding: 1rem 1.4rem; border-radius: 999px; border-color: var(--accent);
     background: rgba(23, 25, 29, 0.9); box-shadow: 0 0 0 4px rgba(185, 167, 121, 0.08);
   }
   @media (max-width: 520px) {
