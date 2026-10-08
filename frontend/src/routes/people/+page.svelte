@@ -1,30 +1,69 @@
 <script>
+  import { untrack } from 'svelte';
   import T from '$lib/T.svelte';
   import PersonCard from '$lib/PersonCard.svelte';
   import Pagination from '$lib/Pagination.svelte';
   import SearchBox from '$lib/SearchBox.svelte';
+  import { selectedCountry } from '$lib/country.js';
 
   let { data } = $props();
 
-  const href = (n) => `/people?${new URLSearchParams({ ...(data.q ? { q: data.q } : {}), ...(data.country ? { country: data.country } : {}), page: String(n) })}`;
+  let people = $state(untrack(() => data.people));
+  let total = $state(untrack(() => data.total));
+  let pages = $state(untrack(() => data.pages));
+  let failed = $state(false);
+  const href = (n) => `/people?${new URLSearchParams({ ...(data.q ? { q: data.q } : {}), page: String(n) })}`;
+
+  $effect(() => {
+    const country = $selectedCountry;
+    const params = new URLSearchParams({
+      limit: '20',
+      offset: String((data.page - 1) * 20),
+      q: data.q
+    });
+    if (country) params.set('country', country);
+    const controller = new AbortController();
+
+    fetch(`/api/people?${params}`, { signal: controller.signal })
+      .then((res) => {
+        if (!res.ok) throw new Error(`People request failed: ${res.status}`);
+        return res.json();
+      })
+      .then((result) => {
+        people = result.items;
+        total = result.total;
+        pages = Math.max(1, Math.ceil(result.total / 20));
+        failed = false;
+      })
+      .catch((error) => {
+        if (error.name !== 'AbortError') {
+          console.error(error);
+          failed = true;
+        }
+      });
+
+    return () => controller.abort();
+  });
 </script>
 
 <svelte:head><title>Remembered — Mortalbook</title></svelte:head>
 
 <h1><T text="Remembered" /></h1>
-<div class="find"><SearchBox value={data.q} country={data.country} /></div>
+<div class="find"><SearchBox value={data.q} /></div>
 
-{#if data.people.length === 0}
+{#if failed}
+  <p class="muted"><T text="Something went wrong. Please try again later." /></p>
+{:else if people.length === 0}
   <p class="muted"><T text="No one found." /></p>
 {:else}
-  <p class="muted count">{data.total} · <T text="Page" /> {data.page} / {data.pages}</p>
+  <p class="muted count">{total} · <T text="Page" /> {data.page} / {pages}</p>
   <div class="grid">
-    {#each data.people as person (person.id)}
+    {#each people as person (person.id)}
       <PersonCard {person} />
     {/each}
   </div>
 
-  <Pagination page={data.page} pages={data.pages} {href} />
+  <Pagination page={data.page} {pages} {href} />
 {/if}
 
 <style>

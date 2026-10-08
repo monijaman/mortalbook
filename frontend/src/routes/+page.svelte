@@ -5,6 +5,7 @@
   import Slideshow from '$lib/Slideshow.svelte';
   import SearchBox from '$lib/SearchBox.svelte';
   import { lang } from '$lib/i18n.js';
+  import { selectedCountry } from '$lib/country.js';
 
   let people = $state([]);
   let upcoming = $state([]);
@@ -24,8 +25,8 @@
     return [city, country, subcontinent, timezone.split('/')[0]].filter(Boolean).map((term) => term.toLowerCase());
   }
 
-  function sortByLocation(items) {
-    const hints = locationHints();
+  function sortByLocation(items, country) {
+    const hints = country ? [country.toLowerCase()] : locationHints();
     return [...items].sort((a, b) => {
       const score = (person) => {
         const place = `${person.death_place || ''} ${person.birth_place || ''}`.toLowerCase();
@@ -36,19 +37,48 @@
     });
   }
 
-  onMount(async () => {
+  onMount(() => {
     // use the visitor's local date, not the server's
     today = new Date();
-    const md = `year=${today.getFullYear()}&month=${today.getMonth() + 1}&day=${today.getDate()}`;
-    try {
-      const [t, w] = await Promise.all([fetch(`/api/people/today?${md}`), fetch(`/api/people/week?${md}`)]);
-      if (!t.ok) throw new Error();
-      people = sortByLocation(await t.json());
-      if (w.ok) ({ upcoming, recent } = await w.json());
-    } catch {
-      failed = true;
-    }
-    loading = false;
+    let controller;
+    const unsubscribe = selectedCountry.subscribe((country) => {
+      controller?.abort();
+      controller = new AbortController();
+      const currentController = controller;
+      const params = new URLSearchParams({
+        year: String(today.getFullYear()),
+        month: String(today.getMonth() + 1),
+        day: String(today.getDate())
+      });
+      if (country) params.set('country', country);
+      loading = true;
+      failed = false;
+
+      Promise.all([
+        fetch(`/api/people/today?${params}`, { signal: currentController.signal }),
+        fetch(`/api/people/week?${params}`, { signal: currentController.signal })
+      ])
+        .then(async ([todayResponse, weekResponse]) => {
+          if (!todayResponse.ok) throw new Error(`Today's people request failed: ${todayResponse.status}`);
+          people = sortByLocation(await todayResponse.json(), country);
+          if (weekResponse.ok) ({ upcoming, recent } = await weekResponse.json());
+          else throw new Error(`Weekly people request failed: ${weekResponse.status}`);
+        })
+        .catch((error) => {
+          if (error.name !== 'AbortError') {
+            console.error(error);
+            failed = true;
+          }
+        })
+        .finally(() => {
+          if (!currentController.signal.aborted) loading = false;
+        });
+    });
+
+    return () => {
+      unsubscribe();
+      controller?.abort();
+    };
   });
 
   const dateLabel = $derived(today.toLocaleDateString($lang, { month: 'long', day: 'numeric' }));

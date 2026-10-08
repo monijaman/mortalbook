@@ -27,6 +27,7 @@ pub async fn health() -> Json<Value> {
 pub struct TodayQuery {
     month: Option<u32>,
     day: Option<u32>,
+    country: Option<String>,
 }
 
 /// People who died on a given calendar day (defaults to today, UTC).
@@ -57,7 +58,10 @@ pub async fn today(
     .bind(feb29_fallback)
     .fetch_all(&s.db)
     .await?;
-    Ok(Json(people))
+    Ok(Json(filter_people_by_country(
+        people,
+        q.country.as_deref(),
+    )))
 }
 
 #[derive(Deserialize)]
@@ -69,6 +73,7 @@ pub struct WeekQuery {
     span: Option<i64>,
     /// max people returned per side (default 6)
     limit: Option<usize>,
+    country: Option<String>,
 }
 
 #[derive(sqlx::FromRow)]
@@ -129,6 +134,22 @@ pub async fn week(
         .into_iter()
         .filter_map(|r| keys.get(&r.md).map(|d| Anniversary { person: r.person, days: *d }))
         .collect();
+    if let Some(country) = q.country.as_deref().filter(|country| !country.trim().is_empty()) {
+        let selected_patterns = country_place_patterns(country);
+        if all
+            .iter()
+            .any(|anniversary| person_matches_country(&anniversary.person, &selected_patterns))
+        {
+            all.retain(|anniversary| {
+                person_matches_country(&anniversary.person, &selected_patterns)
+            });
+        } else {
+            let nearby_patterns = nearby_country_patterns(country);
+            all.retain(|anniversary| {
+                person_matches_country(&anniversary.person, &nearby_patterns)
+            });
+        }
+    }
     all.sort_by(|a, b| {
         (a.days.abs(), a.person.photo_url.is_none(), &a.person.name)
             .cmp(&(b.days.abs(), b.person.photo_url.is_none(), &b.person.name))
@@ -180,6 +201,41 @@ fn nearby_country_patterns(country: &str) -> Vec<String> {
         .iter()
         .flat_map(|country| country_place_patterns(country))
         .collect()
+}
+
+fn person_matches_country(person: &Person, patterns: &[String]) -> bool {
+    let place = format!(
+        "{} {}",
+        person.birth_place.as_deref().unwrap_or_default(),
+        person.death_place.as_deref().unwrap_or_default()
+    )
+    .to_lowercase();
+    patterns.iter().any(|pattern| {
+        let term = pattern.trim_matches('%').to_lowercase();
+        !term.is_empty() && place.contains(&term)
+    })
+}
+
+fn filter_people_by_country(people: Vec<Person>, country: Option<&str>) -> Vec<Person> {
+    let Some(country) = country.filter(|country| !country.trim().is_empty()) else {
+        return people;
+    };
+    let selected_patterns = country_place_patterns(country);
+    if people
+        .iter()
+        .any(|person| person_matches_country(person, &selected_patterns))
+    {
+        people
+            .into_iter()
+            .filter(|person| person_matches_country(person, &selected_patterns))
+            .collect()
+    } else {
+        let nearby_patterns = nearby_country_patterns(country);
+        people
+            .into_iter()
+            .filter(|person| person_matches_country(person, &nearby_patterns))
+            .collect()
+    }
 }
 
 #[derive(Deserialize)]

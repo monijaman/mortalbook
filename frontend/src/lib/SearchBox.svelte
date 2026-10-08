@@ -1,10 +1,10 @@
 <script>
-  import { goto } from '$app/navigation';
+  import { untrack } from 'svelte';
   import { lang, dict, key, want } from '$lib/i18n.js';
+  import { selectedCountry } from '$lib/country.js';
 
-  let { value = '', country: initialCountry = '', large = false } = $props();
-  let query = $state(value);
-  let country = $state(initialCountry);
+  let { value = '', large = false } = $props();
+  let query = $state(untrack(() => value));
   let results = $state([]);
   let open = $state(false);
   let loading = $state(false);
@@ -21,7 +21,7 @@
   function search() {
     clearTimeout(timer);
     const q = query.trim();
-    if (!q && !country) {
+    if (!q) {
       results = [];
       open = false;
       loading = false;
@@ -34,9 +34,9 @@
       loading = true;
       open = true;
       try {
-        const res = await fetch(`/api/people?limit=8&offset=0&q=${encodeURIComponent(q)}&country=${encodeURIComponent(country)}`, {
-          signal: request.signal
-        });
+        const params = new URLSearchParams({ limit: '8', offset: '0', q });
+        if ($selectedCountry) params.set('country', $selectedCountry);
+        const res = await fetch(`/api/people?${params}`, { signal: request.signal });
         if (res.ok) results = (await res.json()).items ?? [];
       } catch (error) {
         if (error.name !== 'AbortError') results = [];
@@ -46,17 +46,11 @@
     }, 300);
   }
 
-  function selectCountry(event) {
-    country = event.currentTarget.value;
+  function selectCountry() {
     cleanup();
     results = [];
     open = false;
     loading = false;
-
-    const params = new URLSearchParams();
-    if (query.trim()) params.set('q', query.trim());
-    if (country) params.set('country', country);
-    goto(`/people${params.size ? `?${params}` : ''}`);
   }
 
   function cleanup() {
@@ -70,7 +64,7 @@
 <form class="search" class:large method="GET" action="/people" role="search" onsubmit={() => cleanup()}>
   <label class="country-filter">
     <span>Country</span>
-    <select name="country" bind:value={country} aria-label="Filter by country" onchange={selectCountry}>
+    <select name="country" bind:value={$selectedCountry} aria-label="Filter by country" onchange={selectCountry}>
     <option value="">All countries</option>
     <option>Bangladesh</option>
     <option>India</option>
@@ -92,7 +86,7 @@
               {#if person.occupation}<span>{person.occupation}</span>{/if}
             </a>
           {/each}
-          <a class="all" href={`/people?q=${encodeURIComponent(query.trim())}&country=${encodeURIComponent(country)}`}>See all results →</a>
+          <a class="all" href={`/people?q=${encodeURIComponent(query.trim())}`}>See all results →</a>
         {:else}
           <p class="status">No results found.</p>
         {/if}
