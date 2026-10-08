@@ -66,6 +66,9 @@
     <span>Country</span>
     <select name="country" bind:value={$selectedCountry} aria-label="Filter by country" onchange={selectCountry}>
     <option value="">All countries</option>
+    {#if $selectedCountry && !['Bangladesh', 'India', 'Pakistan', 'United Kingdom', 'United States'].includes($selectedCountry)}
+      <option value={$selectedCountry}>{$selectedCountry}</option>
+    {/if}
     <option>Bangladesh</option>
     <option>India</option>
     <option>Pakistan</option>

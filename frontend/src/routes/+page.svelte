@@ -53,6 +53,8 @@
       if (country) params.set('country', country);
       loading = true;
       failed = false;
+      upcoming = [];
+      recent = [];
 
       Promise.all([
         fetch(`/api/people/today?${params}`, { signal: currentController.signal }),
@@ -62,7 +64,7 @@
           if (!todayResponse.ok) throw new Error(`Today's people request failed: ${todayResponse.status}`);
           people = sortByLocation(await todayResponse.json(), country);
           if (weekResponse.ok) ({ upcoming, recent } = await weekResponse.json());
-          else throw new Error(`Weekly people request failed: ${weekResponse.status}`);
+          else console.error(`Weekly people request failed: ${weekResponse.status}`);
         })
         .catch((error) => {
           if (error.name !== 'AbortError') {

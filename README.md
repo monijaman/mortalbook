@@ -3,6 +3,9 @@
 A place to remember people who have passed away. Rust (axum + sqlx) API, SvelteKit frontend, PostgreSQL, Docker.
 
 - **Today page** – everyone in the book who passed away on today's date (visitor's local date).
+- **Country-aware browsing** – the browser locale suggests a country, which is saved locally and can
+  be changed in the search selector. Sparse country results are supplemented by nearby and then
+  worldwide people.
 - **Detail page** – photos, videos (uploaded or YouTube/Vimeo links) and the person's story.
 - **Translation** – the visitor's browser language is detected on first visit and all UI text and
   stories are translated into it. A language picker sits at the top. Stories are tagged with their

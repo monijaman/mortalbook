@@ -11,6 +11,7 @@
   let people = $state(untrack(() => data.people));
   let total = $state(untrack(() => data.total));
   let pages = $state(untrack(() => data.pages));
+  let loading = $state(true);
   let failed = $state(false);
   const href = (n) => `/people?${new URLSearchParams({ ...(data.q ? { q: data.q } : {}), page: String(n) })}`;
 
@@ -23,6 +24,8 @@
     });
     if (country) params.set('country', country);
     const controller = new AbortController();
+    loading = true;
+    failed = false;
 
     fetch(`/api/people?${params}`, { signal: controller.signal })
       .then((res) => {
@@ -40,6 +43,9 @@
           console.error(error);
           failed = true;
         }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) loading = false;
       });
 
     return () => controller.abort();
@@ -51,7 +57,9 @@
 <h1><T text="Remembered" /></h1>
 <div class="find"><SearchBox value={data.q} /></div>
 
-{#if failed}
+{#if loading}
+  <p class="muted"><T text="Loading…" /></p>
+{:else if failed}
   <p class="muted"><T text="Something went wrong. Please try again later." /></p>
 {:else if people.length === 0}
   <p class="muted"><T text="No one found." /></p>

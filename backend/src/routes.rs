@@ -58,9 +58,10 @@ pub async fn today(
     .bind(feb29_fallback)
     .fetch_all(&s.db)
     .await?;
-    Ok(Json(filter_people_by_country(
+    Ok(Json(supplement_by_country(
         people,
         q.country.as_deref(),
+        |person| person,
     )))
 }
 
@@ -134,22 +135,9 @@ pub async fn week(
         .into_iter()
         .filter_map(|r| keys.get(&r.md).map(|d| Anniversary { person: r.person, days: *d }))
         .collect();
-    if let Some(country) = q.country.as_deref().filter(|country| !country.trim().is_empty()) {
-        let selected_patterns = country_place_patterns(country);
-        if all
-            .iter()
-            .any(|anniversary| person_matches_country(&anniversary.person, &selected_patterns))
-        {
-            all.retain(|anniversary| {
-                person_matches_country(&anniversary.person, &selected_patterns)
-            });
-        } else {
-            let nearby_patterns = nearby_country_patterns(country);
-            all.retain(|anniversary| {
-                person_matches_country(&anniversary.person, &nearby_patterns)
-            });
-        }
-    }
+    all = supplement_by_country(all, q.country.as_deref(), |anniversary| {
+        &anniversary.person
+    });
     all.sort_by(|a, b| {
         (a.days.abs(), a.person.photo_url.is_none(), &a.person.name)
             .cmp(&(b.days.abs(), b.person.photo_url.is_none(), &b.person.name))
@@ -216,26 +204,45 @@ fn person_matches_country(person: &Person, patterns: &[String]) -> bool {
     })
 }
 
-fn filter_people_by_country(people: Vec<Person>, country: Option<&str>) -> Vec<Person> {
+fn supplement_by_country<T, F>(items: Vec<T>, country: Option<&str>, person: F) -> Vec<T>
+where
+    F: for<'a> Fn(&'a T) -> &'a Person,
+{
     let Some(country) = country.filter(|country| !country.trim().is_empty()) else {
-        return people;
+        return items;
     };
     let selected_patterns = country_place_patterns(country);
-    if people
-        .iter()
-        .any(|person| person_matches_country(person, &selected_patterns))
-    {
-        people
-            .into_iter()
-            .filter(|person| person_matches_country(person, &selected_patterns))
-            .collect()
-    } else {
-        let nearby_patterns = nearby_country_patterns(country);
-        people
-            .into_iter()
-            .filter(|person| person_matches_country(person, &nearby_patterns))
-            .collect()
+    let nearby_patterns = nearby_country_patterns(country);
+    let mut local = Vec::new();
+    let mut other = Vec::new();
+
+    for item in items {
+        if person_matches_country(person(&item), &selected_patterns) {
+            local.push(item);
+        } else {
+            other.push(item);
+        }
     }
+
+    if local.len() >= 10 {
+        return local;
+    }
+
+    let mut nearby = Vec::new();
+    let mut global = Vec::new();
+    for item in other {
+        if person_matches_country(person(&item), &nearby_patterns) {
+            nearby.push(item);
+        } else {
+            global.push(item);
+        }
+    }
+
+    let needed = 10 - local.len();
+    let nearby_count = nearby.len().min(needed);
+    local.extend(nearby.into_iter().take(nearby_count));
+    local.extend(global.into_iter().take(needed - nearby_count));
+    local
 }
 
 #[derive(Deserialize)]
@@ -244,6 +251,46 @@ pub struct ListQuery {
     country: Option<String>,
     limit: Option<i64>,
     offset: Option<i64>,
+}
+
+async fn count_people(
+    db: &sqlx::PgPool,
+    search: &Option<String>,
+    patterns: Option<&Vec<String>>,
+) -> Result<i64, sqlx::Error> {
+    sqlx::query_scalar(
+        "SELECT COUNT(*) FROM people
+         WHERE ($1::text IS NULL OR (name ILIKE '%' || $1 || '%' OR occupation ILIKE '%' || $1 || '%'))
+           AND ($2::text[] IS NULL OR concat_ws(' ', birth_place, death_place) ILIKE ANY($2))",
+    )
+    .bind(search)
+    .bind(patterns)
+    .fetch_one(db)
+    .await
+}
+
+async fn query_people(
+    db: &sqlx::PgPool,
+    search: &Option<String>,
+    patterns: Option<&Vec<String>>,
+    excluded_ids: &[Uuid],
+    limit: i64,
+    offset: i64,
+) -> Result<Vec<Person>, sqlx::Error> {
+    sqlx::query_as::<_, Person>(&format!(
+        "SELECT {PERSON_COLS} FROM people
+         WHERE ($1::text IS NULL OR (name ILIKE '%' || $1 || '%' OR occupation ILIKE '%' || $1 || '%'))
+           AND ($2::text[] IS NULL OR concat_ws(' ', birth_place, death_place) ILIKE ANY($2))
+           AND id != ALL($3::uuid[])
+         ORDER BY death_date DESC, name, id LIMIT $4 OFFSET $5"
+    ))
+    .bind(search)
+    .bind(patterns)
+    .bind(excluded_ids.to_vec())
+    .bind(limit)
+    .bind(offset)
+    .fetch_all(db)
+    .await
 }
 
 pub async fn list(
@@ -255,48 +302,77 @@ pub async fn list(
     let limit = q.limit.unwrap_or(24).clamp(1, 100);
     let offset = q.offset.unwrap_or(0).max(0);
 
-    let mut country_patterns = country.as_deref().map(country_place_patterns);
-    if let Some(patterns) = &country_patterns {
-        let exact_total: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM people
-             WHERE ($1::text IS NULL OR (name ILIKE '%' || $1 || '%' OR occupation ILIKE '%' || $1 || '%'))
-               AND concat_ws(' ', birth_place, death_place) ILIKE ANY($2)",
-        )
-        .bind(&search)
-        .bind(patterns)
-        .fetch_one(&s.db)
-        .await?;
-        if exact_total == 0 {
-            if let Some(selected_country) = country.as_deref() {
-                let nearby_patterns = nearby_country_patterns(selected_country);
-                if !nearby_patterns.is_empty() {
-                    country_patterns = Some(nearby_patterns);
-                }
+    let (people, total) = if let Some(country) = country.as_deref() {
+        let local_patterns = country_place_patterns(country);
+        let local_total = count_people(&s.db, &search, Some(&local_patterns)).await?;
+        if local_total >= 10 {
+            let people = query_people(
+                &s.db,
+                &search,
+                Some(&local_patterns),
+                &[],
+                limit,
+                offset,
+            )
+            .await?;
+            (people, local_total)
+        } else {
+            let mut combined = query_people(
+                &s.db,
+                &search,
+                Some(&local_patterns),
+                &[],
+                10,
+                0,
+            )
+            .await?;
+            let nearby_patterns = nearby_country_patterns(country);
+            let remaining = 10 - combined.len() as i64;
+            if remaining > 0 {
+                let local_ids: Vec<Uuid> = combined.iter().map(|person| person.id).collect();
+                combined.extend(
+                    query_people(
+                        &s.db,
+                        &search,
+                        Some(&nearby_patterns),
+                        &local_ids,
+                        remaining,
+                        0,
+                    )
+                    .await?,
+                );
             }
-        }
-    }
 
-    let total: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM people
-         WHERE ($1::text IS NULL OR (name ILIKE '%' || $1 || '%' OR occupation ILIKE '%' || $1 || '%'))
-           AND ($2::text[] IS NULL OR concat_ws(' ', birth_place, death_place) ILIKE ANY($2))",
-    )
-    .bind(&search)
-    .bind(&country_patterns)
-    .fetch_one(&s.db)
-    .await?;
-    let people = sqlx::query_as::<_, Person>(&format!(
-        "SELECT {PERSON_COLS} FROM people
-         WHERE ($1::text IS NULL OR (name ILIKE '%' || $1 || '%' OR occupation ILIKE '%' || $1 || '%'))
-           AND ($2::text[] IS NULL OR concat_ws(' ', birth_place, death_place) ILIKE ANY($2))
-         ORDER BY death_date DESC, name, id LIMIT $3 OFFSET $4"
-    ))
-    .bind(&search)
-    .bind(&country_patterns)
-    .bind(limit)
-    .bind(offset)
-    .fetch_all(&s.db)
-    .await?;
+            let remaining = 10 - combined.len() as i64;
+            if remaining > 0 {
+                let excluded_ids: Vec<Uuid> = combined.iter().map(|person| person.id).collect();
+                combined.extend(
+                    query_people(
+                        &s.db,
+                        &search,
+                        None,
+                        &excluded_ids,
+                        remaining,
+                        0,
+                    )
+                    .await?,
+                );
+            }
+
+            let total = combined.len() as i64;
+            let start = (offset as usize).min(combined.len());
+            let people = combined
+                .into_iter()
+                .skip(start)
+                .take(limit as usize)
+                .collect();
+            (people, total)
+        }
+    } else {
+        let total = count_people(&s.db, &search, None).await?;
+        let people = query_people(&s.db, &search, None, &[], limit, offset).await?;
+        (people, total)
+    };
     Ok(Json(json!({ "items": people, "total": total, "limit": limit, "offset": offset })))
 }
 
@@ -489,4 +565,70 @@ pub async fn translate_texts(
 
 pub async fn languages(State(s): State<AppState>) -> Result<Json<Value>, AppError> {
     Ok(Json(translate::languages(&s).await?))
+}
+
+#[cfg(test)]
+mod country_filter_tests {
+    use super::*;
+
+    fn person(name: &str, birth_place: &str) -> Person {
+        Person {
+            id: Uuid::new_v4(),
+            name: name.to_string(),
+            birth_date: None,
+            death_date: NaiveDate::from_ymd_opt(2000, 1, 1).unwrap(),
+            bio: String::new(),
+            lang: None,
+            photo_url: None,
+            occupation: None,
+            birth_place: Some(birth_place.to_string()),
+            death_place: None,
+            birth_precision: "year".to_string(),
+            death_precision: "day".to_string(),
+            created_at: Utc::now(),
+        }
+    }
+
+    #[test]
+    fn supplements_sparse_local_results_with_nearby_then_global_people() {
+        let people = vec![
+            person("Local 1", "Dhaka, Bangladesh"),
+            person("Local 2", "Sylhet, Bangladesh"),
+            person("Nearby 1", "Kolkata, India"),
+            person("Nearby 2", "Delhi, India"),
+            person("Nearby 3", "Chennai, India"),
+        ]
+        .into_iter()
+        .chain((1..=10).map(|n| person(&format!("Global {n}"), "Paris, France")))
+        .collect();
+
+        let results = supplement_by_country(people, Some("Bangladesh"), |person| person);
+
+        assert_eq!(results.len(), 10);
+        assert_eq!(
+            results.iter().filter(|person| person.name.starts_with("Local")).count(),
+            2
+        );
+        assert_eq!(
+            results.iter().filter(|person| person.name.starts_with("Nearby")).count(),
+            3
+        );
+        assert_eq!(
+            results.iter().filter(|person| person.name.starts_with("Global")).count(),
+            5
+        );
+    }
+
+    #[test]
+    fn keeps_all_local_results_when_threshold_is_met() {
+        let people = (1..=10)
+            .map(|n| person(&format!("Local {n}"), "Dhaka, Bangladesh"))
+            .chain(std::iter::once(person("Nearby", "Kolkata, India")))
+            .collect();
+
+        let results = supplement_by_country(people, Some("Bangladesh"), |person| person);
+
+        assert_eq!(results.len(), 10);
+        assert!(results.iter().all(|person| person.name.starts_with("Local")));
+    }
 }
