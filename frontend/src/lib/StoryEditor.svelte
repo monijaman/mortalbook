@@ -2,8 +2,10 @@
   // Rich text editor for stories. Edits visually (bold, italic, headings, lists, quotes, links)
   // and stores light Markdown in `value`, so old plain-text stories open and save unchanged.
   import { toHtml, toMarkdown } from '$lib/markdown.js';
+  import { adminApi } from '$lib/admin.js';
 
-  let { value = $bindable(''), max = 10000, label = 'Story' } = $props();
+  // `context`: what is known about the person (name, dates, occupation, places) for AI generation.
+  let { value = $bindable(''), max = 10000, label = 'Story', context = null } = $props();
 
   let editor = $state();
   let source = $state(false);
@@ -80,6 +82,69 @@
     document.execCommand('defaultParagraphSeparator', false, 'p');
   }
 
+  // ---- AI story generation (OpenAI with web search, via the admin API) ----
+  let dialog = $state();
+  let prompt = $state('');
+  let mode = $state('replace');
+  let withSources = $state(true);
+  let generating = $state(false);
+  let genError = $state('');
+  let result = $state(null);
+
+  function openGenerate() {
+    genError = '';
+    result = null;
+    mode = 'replace';
+    dialog.showModal();
+  }
+
+  /** Drop the inline "([site](url))" citations the web-search model sometimes adds. */
+  function stripCitations(text) {
+    return text
+      .replace(/\s*\(\s*\[[^\]]*\]\(https?:[^)]*\)\s*\)/g, '')
+      .replace(/\s*\[[^\]]*\]\(https?:[^)]*utm_source=openai[^)]*\)/g, '')
+      .trim();
+  }
+
+  async function generate() {
+    generating = true;
+    genError = '';
+    result = null;
+    try {
+      const data = await adminApi('/api/admin/generate-story', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: context?.name || '',
+          birth_date: context?.birth_date || null,
+          death_date: context?.death_date || null,
+          occupation: context?.occupation || null,
+          birth_place: context?.birth_place || null,
+          death_place: context?.death_place || null,
+          prompt: prompt.trim() || null,
+          current_story: value.trim() || null
+        })
+      });
+      result = { story: stripCitations(data.story), sources: data.sources || [] };
+    } catch (err) {
+      genError = err.message;
+    } finally {
+      generating = false;
+    }
+  }
+
+  function useResult() {
+    let text = result.story;
+    if (withSources && result.sources.length) {
+      const links = result.sources
+        .slice(0, 8)
+        .map((s) => `- [${s.title.replace(/[\[\]]/g, '')}](${s.url})`)
+        .join('\n');
+      text += `\n\n**Sources**\n\n${links}`;
+    }
+    value = mode === 'append' && value.trim() ? `${value.trim()}\n\n${text}` : text;
+    dialog.close();
+  }
+
   function toggleSource() {
     if (!source && editor) sync();
     source = !source;
@@ -110,7 +175,10 @@
       <button type="button" onmousedown={(e) => e.preventDefault()} onclick={() => run('redo')} title="Redo (Ctrl+Y)">↷</button>
       <button type="button" onmousedown={(e) => e.preventDefault()} onclick={() => run('removeFormat')} title="Clear formatting">Clear</button>
     {/if}
-    <button type="button" class="right" class:on={source} onclick={toggleSource} title="Edit the raw text">
+    {#if context}
+      <button type="button" class="right ai" onclick={openGenerate} title="Write the story with AI, using a web search">✨ Generate story</button>
+    {/if}
+    <button type="button" class:right={!context} class:on={source} onclick={toggleSource} title="Edit the raw text">
       {source ? 'Back to editor' : '</> Source'}
     </button>
   </div>
@@ -141,7 +209,77 @@
   </div>
 </div>
 
+<dialog bind:this={dialog} class="gen" aria-labelledby="gen-title">
+  <h3 id="gen-title">✨ Generate story with AI</h3>
+  <p class="muted">
+    OpenAI searches the web for <strong>{context?.name || 'this person'}</strong> and writes a draft.
+    You review it before anything is saved. Always check the facts.
+  </p>
+
+  {#if !result}
+    <label>
+      <span>Optional instructions</span>
+      <textarea
+        bind:value={prompt}
+        rows="4"
+        maxlength="2000"
+        placeholder="e.g. Focus on his literary work. Keep it under 300 words. Write in Bengali."
+        disabled={generating}
+      ></textarea>
+    </label>
+    {#if genError}<p class="error" role="alert">{genError}</p>{/if}
+    {#if generating}<p class="muted" role="status">Searching the web and writing… this can take up to a minute.</p>{/if}
+    <div class="gen-actions">
+      <button type="button" onclick={generate} disabled={generating}>{generating ? 'Generating…' : 'Generate'}</button>
+      <button type="button" class="plain" onclick={() => dialog.close()} disabled={generating}>Cancel</button>
+    </div>
+  {:else}
+    <div class="gen-preview">{@html toHtml(result.story)}</div>
+    {#if result.sources.length}
+      <details>
+        <summary>{result.sources.length} sources found</summary>
+        <ul class="src">
+          {#each result.sources as src}<li><a href={src.url} target="_blank" rel="noopener noreferrer">{src.title}</a></li>{/each}
+        </ul>
+      </details>
+      <label class="check"><input type="checkbox" bind:checked={withSources} /> Add the sources list under the story</label>
+    {/if}
+    {#if value.trim()}
+      <fieldset class="mode">
+        <label><input type="radio" bind:group={mode} value="replace" /> Replace the current story</label>
+        <label><input type="radio" bind:group={mode} value="append" /> Add after the current story</label>
+      </fieldset>
+    {/if}
+    <div class="gen-actions">
+      <button type="button" onclick={useResult}>Use this story</button>
+      <button type="button" class="plain" onclick={generate} disabled={generating}>{generating ? 'Generating…' : 'Try again'}</button>
+      <button type="button" class="plain" onclick={() => dialog.close()}>Discard</button>
+    </div>
+    {#if genError}<p class="error" role="alert">{genError}</p>{/if}
+  {/if}
+</dialog>
+
 <style>
+  .ai { background: var(--accent) !important; color: var(--accent-contrast) !important; margin-left: auto; }
+  .gen {
+    width: min(680px, 94vw); max-height: 90vh; overflow: auto; border: 1px solid var(--line);
+    border-radius: 12px; background: var(--panel); color: var(--text); padding: 1.25rem 1.5rem;
+  }
+  .gen::backdrop { background: rgba(0, 0, 0, 0.55); }
+  .gen h3 { margin: 0 0 0.5rem; }
+  .gen label span { display: block; margin-bottom: 0.3rem; color: var(--muted); }
+  .gen textarea { width: 100%; box-sizing: border-box; min-height: 0; font-size: 1rem; }
+  .gen-actions { display: flex; gap: 0.6rem; flex-wrap: wrap; margin-top: 1rem; }
+  .plain { background: transparent; color: var(--text); border: 1px solid var(--line); }
+  .gen-preview {
+    max-height: 45vh; overflow: auto; border: 1px solid var(--line); border-radius: 8px;
+    padding: 0.5rem 1rem; background: var(--surface); line-height: 1.6; margin: 0.75rem 0;
+  }
+  .gen-preview :global(p) { margin: 0 0 1em; }
+  .src { margin: 0.4rem 0; padding-left: 1.2rem; font-size: 0.9rem; }
+  .check, .mode label { display: block; margin: 0.5rem 0; }
+  .mode { border: 0; padding: 0; margin: 0.5rem 0; }
+  .error { color: var(--danger); }
   .story { display: grid; gap: 0.5rem; max-width: 760px; }
   .label { color: var(--muted); font-size: 0.95rem; }
   .toolbar {

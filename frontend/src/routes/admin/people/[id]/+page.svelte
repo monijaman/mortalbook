@@ -117,7 +117,7 @@
       <label><span>Birth place</span><input bind:value={person.birth_place} maxlength="300" /></label>
       <label><span>Death place</span><input bind:value={person.death_place} maxlength="300" /></label>
     </div>
-    <StoryEditor bind:value={person.bio} />
+    <StoryEditor bind:value={person.bio} context={person} />
     <div class="actions">
       <button type="submit" disabled={busy || !dirty}>{busy ? 'Saving…' : 'Save changes (Ctrl+S)'}</button>
       {#if dirty}<span class="muted">Unsaved changes</span>{/if}

@@ -704,7 +704,7 @@ fn authorization_token(headers: &HeaderMap) -> Option<String> {
     }
 }
 
-async fn require_admin(
+pub async fn require_admin(
     headers: &HeaderMap,
     state: &AppState,
     require_same_origin: bool,
