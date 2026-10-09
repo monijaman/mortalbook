@@ -464,12 +464,14 @@ fn parse_date(label: &str, v: &str) -> Result<Option<NaiveDate>, AppError> {
         .map_err(|_| AppError::BadRequest(format!("{label} must be YYYY-MM-DD")))
 }
 
-/// Public submission: multipart with name, death_date, [birth_date], [bio],
+/// Admin-only submission: multipart with name, death_date, [birth_date], [bio],
 /// [photo], any number of `media` files and `video_url` links.
 pub async fn create(
     State(s): State<AppState>,
+    headers: HeaderMap,
     mp: Multipart,
 ) -> Result<Json<Value>, AppError> {
+    require_admin(&headers, &s, true).await?;
     let mut saved: Vec<Saved> = Vec::new();
     let result = create_inner(&s, mp, &mut saved).await;
     if result.is_err() {
@@ -759,6 +761,7 @@ pub async fn admin_login(
         || !constant_time_eq(credentials.username.as_bytes(), username.as_bytes())
         || !constant_time_eq(credentials.password.as_bytes(), password.as_bytes())
     {
+        tokio::time::sleep(std::time::Duration::from_millis(750)).await;
         return Err(AppError::Unauthorized);
     }
 
@@ -966,6 +969,172 @@ pub async fn ingest_recent_deaths(
     }
     tx.commit().await?;
     Ok(Json(json!({ "queued": inserted })))
+}
+
+pub async fn admin_me(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Value>, AppError> {
+    require_admin(&headers, &s, false).await?;
+    Ok(Json(json!({ "authenticated": true })))
+}
+
+#[derive(Deserialize)]
+pub struct AdminPeopleQuery {
+    q: Option<String>,
+    limit: Option<i64>,
+    offset: Option<i64>,
+}
+
+/// Every person in the catalogue (newest first), optionally filtered by name.
+pub async fn admin_list_people(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+    Query(q): Query<AdminPeopleQuery>,
+) -> Result<Json<Value>, AppError> {
+    require_admin(&headers, &s, false).await?;
+    let limit = q.limit.unwrap_or(25).clamp(1, 100);
+    let offset = q.offset.unwrap_or(0).max(0);
+    let pattern = q
+        .q
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .map(|v| format!("%{}%", v.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_")));
+    let total: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM people WHERE $1::text IS NULL OR name ILIKE $1",
+    )
+    .bind(&pattern)
+    .fetch_one(&s.db)
+    .await?;
+    let items = sqlx::query_as::<_, Person>(&format!(
+        "SELECT {PERSON_COLS} FROM people
+         WHERE $1::text IS NULL OR name ILIKE $1
+         ORDER BY created_at DESC, name
+         LIMIT $2 OFFSET $3"
+    ))
+    .bind(&pattern)
+    .bind(limit)
+    .bind(offset)
+    .fetch_all(&s.db)
+    .await?;
+    Ok(Json(json!({ "items": items, "total": total, "limit": limit, "offset": offset })))
+}
+
+#[derive(Deserialize)]
+pub struct PersonUpdate {
+    name: String,
+    birth_date: Option<NaiveDate>,
+    death_date: NaiveDate,
+    bio: String,
+    occupation: Option<String>,
+    birth_place: Option<String>,
+    death_place: Option<String>,
+    birth_precision: Option<String>,
+    death_precision: Option<String>,
+}
+
+const PRECISIONS: [&str; 5] = ["day", "month", "year", "decade", "century"];
+
+pub async fn admin_update_person(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+    Json(mut update): Json<PersonUpdate>,
+) -> Result<Json<Value>, AppError> {
+    require_admin(&headers, &s, true).await?;
+    update.name = update.name.trim().to_string();
+    update.bio = update.bio.trim().to_string();
+    if update.name.is_empty() || update.name.chars().count() > 200 {
+        return Err(AppError::BadRequest("name is required (max 200 characters)".into()));
+    }
+    if update.bio.chars().count() > 10_000 {
+        return Err(AppError::BadRequest("story is too long (max 10000 characters)".into()));
+    }
+    if update.birth_date.is_some_and(|birth| birth > update.death_date) {
+        return Err(AppError::BadRequest("birth date must not be after death date".into()));
+    }
+    if update.death_date > Utc::now().date_naive() + Duration::days(1) {
+        return Err(AppError::BadRequest("death date cannot be in the future".into()));
+    }
+    for precision in [&update.birth_precision, &update.death_precision].into_iter().flatten() {
+        if !PRECISIONS.contains(&precision.as_str()) {
+            return Err(AppError::BadRequest("invalid date precision".into()));
+        }
+    }
+    normalize_optional_text(&mut update.occupation, "occupation", 500)?;
+    normalize_optional_text(&mut update.birth_place, "birth place", 300)?;
+    normalize_optional_text(&mut update.death_place, "death place", 300)?;
+
+    let existing_bio: String = sqlx::query_scalar("SELECT bio FROM people WHERE id = $1")
+        .bind(id)
+        .fetch_optional(&s.db)
+        .await?
+        .ok_or(AppError::NotFound)?;
+    // Re-detect the language only when the story text changed.
+    let lang_changed = existing_bio != update.bio;
+    let lang = if lang_changed && !update.bio.is_empty() {
+        translate::detect(&s, &update.bio).await
+    } else {
+        None
+    };
+
+    sqlx::query(
+        "UPDATE people SET
+            name = $2, birth_date = $3, death_date = $4, bio = $5, occupation = $6,
+            birth_place = $7, death_place = $8,
+            birth_precision = COALESCE($9, birth_precision),
+            death_precision = COALESCE($10, death_precision),
+            lang = CASE WHEN $11 THEN $12 ELSE lang END
+         WHERE id = $1",
+    )
+    .bind(id)
+    .bind(update.name)
+    .bind(update.birth_date)
+    .bind(update.death_date)
+    .bind(update.bio)
+    .bind(update.occupation)
+    .bind(update.birth_place)
+    .bind(update.death_place)
+    .bind(update.birth_precision)
+    .bind(update.death_precision)
+    .bind(lang_changed)
+    .bind(lang)
+    .execute(&s.db)
+    .await?;
+    Ok(Json(json!({ "updated": true })))
+}
+
+pub async fn admin_delete_person(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Value>, AppError> {
+    require_admin(&headers, &s, true).await?;
+    let mut tx = s.db.begin().await?;
+    let urls: Vec<String> = sqlx::query_scalar(
+        "SELECT url FROM media WHERE person_id = $1 AND url LIKE '/uploads/%'
+         UNION SELECT photo_url FROM people WHERE id = $1 AND photo_url LIKE '/uploads/%'",
+    )
+    .bind(id)
+    .fetch_all(&mut *tx)
+    .await?;
+    let result = sqlx::query("DELETE FROM people WHERE id = $1")
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
+    if result.rows_affected() == 0 {
+        return Err(AppError::NotFound);
+    }
+    tx.commit().await?;
+    for url in urls {
+        if let Some(name) = url.strip_prefix("/uploads/") {
+            if !name.is_empty() && !name.contains('/') && !name.contains("..") {
+                let _ = fs::remove_file(s.upload_dir.join(name)).await;
+            }
+        }
+    }
+    Ok(Json(json!({ "deleted": true })))
 }
 
 pub async fn pending_people(

@@ -6,7 +6,8 @@ export async function handle({ event, resolve }) {
   const { pathname, search } = event.url;
   if (pathname.startsWith('/api/') || pathname.startsWith('/uploads/')) {
     const headers = new Headers(event.request.headers);
-    headers.delete('host');
+    // Keep the public host so the backend's same-origin check (Origin vs Host) passes.
+    headers.set('host', event.url.host);
     headers.delete('connection');
     const hasBody = !['GET', 'HEAD'].includes(event.request.method);
     return fetch(BACKEND + pathname + search, {

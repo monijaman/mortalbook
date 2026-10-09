@@ -1,93 +1,119 @@
 <script>
-  import { goto } from '$app/navigation';
-  import T from '$lib/T.svelte';
+  import { onMount } from 'svelte';
+  import { adminApi, logout } from '$lib/admin.js';
 
-  let busy = $state(false);
+  const PAGE = 25;
+  let items = $state([]);
+  let total = $state(0);
+  let offset = $state(0);
+  let query = $state('');
   let error = $state('');
-  let videoUrls = $state(['']);
+  let notice = $state('');
+  let loading = $state(false);
 
-  async function submit(e) {
-    e.preventDefault();
+  onMount(() => load());
+
+  async function load() {
+    loading = true;
     error = '';
-    busy = true;
     try {
-      const fd = new FormData(e.currentTarget);
-      videoUrls.filter((u) => u.trim()).forEach((u) => fd.append('video_url', u.trim()));
-      const res = await fetch('/api/people', { method: 'POST', body: fd });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body.error || `Error ${res.status}`);
-      await goto(`/people/${body.id}`);
+      const params = new URLSearchParams({ limit: PAGE, offset });
+      if (query.trim()) params.set('q', query.trim());
+      const data = await adminApi(`/api/admin/people?${params}`);
+      items = data.items;
+      total = data.total;
     } catch (err) {
       error = err.message;
     } finally {
-      busy = false;
+      loading = false;
+    }
+  }
+
+  function search(event) {
+    event.preventDefault();
+    offset = 0;
+    load();
+  }
+
+  function page(delta) {
+    offset = Math.max(0, offset + delta * PAGE);
+    load();
+  }
+
+  async function remove(person) {
+    if (!confirm(`Permanently delete ${person.name}? This cannot be undone.`)) return;
+    error = '';
+    notice = '';
+    try {
+      await adminApi(`/api/admin/people/${person.id}`, { method: 'DELETE' });
+      notice = `${person.name} was deleted.`;
+      await load();
+    } catch (err) {
+      error = err.message;
     }
   }
 </script>
 
 <svelte:head>
-  <title>Add a Person — Mortalbook</title>
+  <title>Manage people — Mortalbook</title>
   <meta name="robots" content="noindex,nofollow" />
 </svelte:head>
 
-<h1><T text="Add someone you remember" /></h1>
-<p class="muted"><T text="Write in any language — visitors will read it in their own." /></p>
-<p><a href="/admin/review">Review automated recent-death candidates</a></p>
+<h1>Manage people</h1>
 
-<form onsubmit={submit}>
-  <label>
-    <span><T text="Full name" /> *</span>
-    <input name="name" required maxlength="200" />
-  </label>
+<div class="toolbar">
+  <a class="button" href="/admin/new">+ Add a person</a>
+  <a href="/admin/review">Review recent-death candidates</a>
+  <button type="button" class="secondary" onclick={logout}>Sign out</button>
+</div>
 
-  <div class="row">
-    <label>
-      <span><T text="Date of birth" /></span>
-      <input type="date" name="birth_date" />
-    </label>
-    <label>
-      <span><T text="Date of passing" /> *</span>
-      <input type="date" name="death_date" required />
-    </label>
-  </div>
-
-  <label>
-    <span><T text="Their story" /></span>
-    <textarea name="bio" rows="8" maxlength="10000"></textarea>
-  </label>
-
-  <label>
-    <span><T text="Main photo" /></span>
-    <input type="file" name="photo" accept="image/jpeg,image/png,image/webp,image/gif" />
-  </label>
-
-  <label>
-    <span><T text="More photos and videos" /></span>
-    <input type="file" name="media" multiple accept="image/*,video/mp4,video/webm,video/quicktime" />
-  </label>
-
-  <fieldset>
-    <legend><T text="Video links (YouTube, Vimeo)" /></legend>
-    {#each videoUrls as _, i}
-      <input type="url" placeholder="https://" bind:value={videoUrls[i]} />
-    {/each}
-    <button type="button" class="link" onclick={() => videoUrls.push('')}>+ <T text="Add another link" /></button>
-  </fieldset>
-
-  {#if error}<p class="error">{error}</p>{/if}
-
-  <button type="submit" disabled={busy}>
-    {#if busy}<T text="Saving…" />{:else}<T text="Save memorial" />{/if}
-  </button>
+<form class="search" onsubmit={search}>
+  <input type="search" placeholder="Search by name" bind:value={query} />
+  <button type="submit">Search</button>
 </form>
 
+{#if error}<p class="error" role="alert">{error}</p>{/if}
+{#if notice}<p class="notice" role="status">{notice}</p>{/if}
+
+<p class="muted">{total} {total === 1 ? 'person' : 'people'}{loading ? ' · loading…' : ''}</p>
+
+<table>
+  <thead>
+    <tr><th>Name</th><th>Born</th><th>Died</th><th>Occupation</th><th></th></tr>
+  </thead>
+  <tbody>
+    {#each items as person (person.id)}
+      <tr>
+        <td><a href={`/people/${person.id}`}>{person.name}</a></td>
+        <td>{person.birth_date ?? '—'}</td>
+        <td>{person.death_date}</td>
+        <td>{person.occupation ?? '—'}</td>
+        <td class="actions">
+          <a href={`/admin/people/${person.id}`}>Edit</a>
+          <button type="button" class="danger" onclick={() => remove(person)}>Delete</button>
+        </td>
+      </tr>
+    {/each}
+  </tbody>
+</table>
+
+<div class="toolbar">
+  <button type="button" onclick={() => page(-1)} disabled={offset === 0 || loading}>← Previous</button>
+  <button type="button" onclick={() => page(1)} disabled={offset + PAGE >= total || loading}>Next →</button>
+</div>
+
 <style>
-  form { display: grid; gap: 1.2rem; max-width: 680px; margin-top: 1.5rem; }
-  label span, legend { display: block; margin-bottom: 0.3rem; color: var(--muted); font-size: 0.95rem; }
-  .row { display: grid; gap: 1rem; grid-template-columns: 1fr 1fr; }
-  fieldset { border: 1px solid var(--line); border-radius: 8px; display: grid; gap: 0.6rem; }
-  .link { border: 0; padding: 0; justify-self: start; text-decoration: underline; }
-  .link:hover { background: none; color: var(--text); }
-  .error { color: var(--danger); margin: 0; }
-  form > button[type='submit'] { justify-self: start; }
+  .toolbar { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; margin: 1rem 0; }
+  .search { display: flex; gap: 0.5rem; max-width: 500px; }
+  .search input { flex: 1; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 0.5rem 0.6rem; border-bottom: 1px solid var(--line); }
+  th { color: var(--muted); font-weight: 500; }
+  .actions { display: flex; gap: 0.75rem; align-items: center; white-space: nowrap; }
+  .secondary { background: transparent; color: var(--text); }
+  .danger { background: var(--danger); }
+  .button { background: var(--accent); color: #fff; padding: 0.45rem 0.9rem; border-radius: 6px; text-decoration: none; }
+  .error { color: var(--danger); }
+  .notice { color: var(--accent); }
+  @media (max-width: 640px) { th:nth-child(4), td:nth-child(4), th:nth-child(2), td:nth-child(2) { display: none; } }
 </style>

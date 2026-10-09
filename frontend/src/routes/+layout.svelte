@@ -44,7 +44,7 @@
   <nav>
     <a href="/"><T text="Today" /></a>
     <a href="/people"><T text="Remembered" /></a>
-    <a href="/admin"><T text="Add a person" /></a>
+    <a href="/admin"><T text="Admin" /></a>
   </nav>
   <div class="header-tools">
     <LanguagePicker />

@@ -1,9 +1,7 @@
 <script>
   import { onMount } from 'svelte';
-  import T from '$lib/T.svelte';
+  import { adminApi, logout } from '$lib/admin.js';
 
-  let token = $state('');
-  let tokenInput = $state('');
   let people = $state([]);
   let error = $state('');
   let notice = $state('');
@@ -11,49 +9,14 @@
   let loading = $state(false);
 
   onMount(() => {
-    token = sessionStorage.getItem('mortalbook-admin-review-token') || '';
-    if (token) loadPeople().catch((err) => { error = err.message; });
+    loadPeople().catch((err) => { error = err.message; });
   });
-
-  async function api(path, options = {}) {
-    const response = await fetch(path, {
-      ...options,
-      headers: {
-        Authorization: `Bearer ${token}`,
-        ...(options.body ? { 'Content-Type': 'application/json' } : {}),
-        ...options.headers
-      }
-    });
-    const body = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      if (response.status === 401 || response.status === 503) {
-        token = '';
-        sessionStorage.removeItem('mortalbook-admin-review-token');
-      }
-      throw new Error(body.error || `Request failed (${response.status})`);
-    }
-    return body;
-  }
-
-  async function connect(event) {
-    event.preventDefault();
-    error = '';
-    notice = '';
-    token = tokenInput.trim();
-    try {
-      await loadPeople();
-      sessionStorage.setItem('mortalbook-admin-review-token', token);
-      tokenInput = '';
-    } catch (err) {
-      error = err.message;
-    }
-  }
 
   async function loadPeople() {
     loading = true;
     error = '';
     try {
-      people = await api('/api/admin/pending-people');
+      people = await adminApi('/api/admin/pending-people');
     } finally {
       loading = false;
     }
@@ -76,7 +39,7 @@
     error = '';
     notice = '';
     try {
-      await api(`/api/admin/pending-people/${person.id}`, {
+      await adminApi(`/api/admin/pending-people/${person.id}`, {
         method: 'PATCH',
         body: JSON.stringify(editable(person))
       });
@@ -95,12 +58,12 @@
     notice = '';
     try {
       if (decision === 'approve') {
-        await api(`/api/admin/pending-people/${person.id}`, {
+        await adminApi(`/api/admin/pending-people/${person.id}`, {
           method: 'PATCH',
           body: JSON.stringify(editable(person))
         });
       }
-      await api(`/api/admin/pending-people/${person.id}/${decision}`, { method: 'POST' });
+      await adminApi(`/api/admin/pending-people/${person.id}/${decision}`, { method: 'POST' });
       people = people.filter((item) => item.id !== person.id);
       notice = decision === 'approve'
         ? `${person.name} was approved and added to the public catalog.`
@@ -112,11 +75,6 @@
     }
   }
 
-  function disconnect() {
-    token = '';
-    people = [];
-    sessionStorage.removeItem('mortalbook-admin-review-token');
-  }
 </script>
 
 <svelte:head>
@@ -130,29 +88,20 @@
   reliable reporting, edit the story, then approve or reject each record.
 </p>
 
-{#if !token}
-  <form class="connect" onsubmit={connect}>
-    <label>
-      <span>Admin review token</span>
-      <input type="password" bind:value={tokenInput} autocomplete="current-password" required />
-    </label>
-    <button type="submit">Open review queue</button>
-  </form>
-{:else}
-  <div class="toolbar">
-    <button
-      type="button"
-      onclick={() => loadPeople().catch((err) => { error = err.message; })}
-      disabled={loading}
-    >Refresh queue</button>
-    <button type="button" class="secondary" onclick={disconnect}>Sign out</button>
-  </div>
-{/if}
+<div class="toolbar">
+  <a href="/admin">← All people</a>
+  <button
+    type="button"
+    onclick={() => loadPeople().catch((err) => { error = err.message; })}
+    disabled={loading}
+  >Refresh queue</button>
+  <button type="button" class="secondary" onclick={logout}>Sign out</button>
+</div>
 
 {#if error}<p class="error" role="alert">{error}</p>{/if}
 {#if notice}<p class="notice" role="status">{notice}</p>{/if}
-{#if token && loading}<p class="muted">Loading review queue…</p>{/if}
-{#if token && !loading && people.length === 0}
+{#if loading}<p class="muted">Loading review queue…</p>{/if}
+{#if !loading && people.length === 0}
   <p class="muted">There are no recent-death candidates waiting for review.</p>
 {/if}
 
@@ -221,8 +170,7 @@
 </section>
 
 <style>
-  .connect, .editor { display: grid; gap: 1rem; }
-  .connect { max-width: 500px; margin: 1.5rem 0; }
+  .editor { display: grid; gap: 1rem; }
   .queue { display: grid; gap: 1.5rem; margin-top: 1.5rem; }
   .candidate { border: 1px solid var(--line); border-radius: 10px; padding: 1.25rem; }
   .candidate h2 { margin: 0; }

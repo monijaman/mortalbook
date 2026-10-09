@@ -7,7 +7,7 @@ use std::{env, path::PathBuf};
 
 use axum::{
     extract::DefaultBodyLimit,
-    routing::{get, post},
+    routing::{get, patch, post},
     Router,
 };
 use sqlx::postgres::PgPoolOptions;
@@ -69,11 +69,20 @@ async fn main() -> anyhow::Result<()> {
 
     let app = Router::new()
         .route("/api/health", get(routes::health))
-        .route("/api/people", get(routes::list).post(routes::create))
+        .route("/api/people", get(routes::list))
         .route("/api/admin/login", post(routes::admin_login))
         .route("/api/admin/logout", post(routes::admin_logout))
+        .route("/api/admin/me", get(routes::admin_me))
+        .route(
+            "/api/admin/people",
+            get(routes::admin_list_people).post(routes::create),
+        )
+        .route(
+            "/api/admin/people/:id",
+            patch(routes::admin_update_person).delete(routes::admin_delete_person),
+        )
         .route("/api/admin/pending-people", get(routes::pending_people))
-        .route("/api/admin/pending-people/:id", axum::routing::patch(routes::update_pending_person))
+        .route("/api/admin/pending-people/:id", patch(routes::update_pending_person))
         .route(
             "/api/admin/pending-people/:id/approve",
             post(routes::approve_pending_person),
