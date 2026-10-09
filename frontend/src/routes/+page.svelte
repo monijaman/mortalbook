@@ -43,6 +43,22 @@
     });
   }
 
+  function localDateString(date) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
+  const lostThisWeek = $derived.by(() => {
+    const through = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const from = new Date(through);
+    from.setDate(from.getDate() - 6);
+    const startDate = localDateString(from);
+    const endDate = localDateString(through);
+    return recentlyLost.filter((person) => person.death_date >= startDate && person.death_date <= endDate);
+  });
+
   onMount(() => {
     // use the visitor's local date, not the server's
     today = new Date();
@@ -144,6 +160,22 @@
 <section class="hero">
   <p class="eyebrow"><T text="Remembered on this day" /></p>
   <h1>{dateLabel}</h1>
+  <section class="lost-this-week" aria-labelledby="lost-this-week-heading">
+    <h2 id="lost-this-week-heading"><T text="People we lost in the last 7 days" /></h2>
+    {#if recentPeopleLoading}
+      <p class="muted center"><T text="Loading…" /></p>
+    {:else if recentPeopleFailed}
+      <p class="muted center"><T text="Recently remembered people could not be loaded." /></p>
+    {:else if lostThisWeek.length === 0}
+      <p class="muted center"><T text="No recently lost people are in the memorial yet." /></p>
+    {:else}
+      <div class="grid">
+        {#each lostThisWeek as person (person.id)}
+          <PersonCard {person} showAgo />
+        {/each}
+      </div>
+    {/if}
+  </section>
   <div class="find"><SearchBox large /></div>
 </section>
 
@@ -214,6 +246,9 @@
   .hero { text-align: center; padding: 1.5rem 0 2.5rem; }
   .eyebrow { color: var(--accent); text-transform: uppercase; letter-spacing: 0.2em; font-size: 0.85rem; margin: 0; }
   h1 { font-size: clamp(2.2rem, 6vw, 3.6rem); margin: 0.3rem 0 0; }
+  .lost-this-week { margin: 1.5rem auto 0; text-align: left; max-width: 1200px; }
+  .lost-this-week h2 { margin: 0 0 1rem; text-align: center; font-size: 1.5rem; }
+  .lost-this-week .grid { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
   .find { margin-top: 2rem; }
   .center { text-align: center; }
   .block { margin: 0 0 3.5rem; }

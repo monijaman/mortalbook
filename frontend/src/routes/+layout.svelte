@@ -8,14 +8,12 @@
   import { selectedCountry, syncCountryUrl } from '$lib/country.js';
 
   let { children } = $props();
-  let theme = $state('light');
+  let theme = $state('dark');
 
   onMount(() => {
     const savedTheme = localStorage.getItem('theme');
-    if (savedTheme === 'dark' || savedTheme === 'light') {
-      theme = savedTheme;
-      document.documentElement.dataset.theme = savedTheme;
-    }
+    theme = savedTheme === 'light' ? 'light' : 'dark';
+    document.documentElement.dataset.theme = theme;
   });
 
   function toggleTheme() {

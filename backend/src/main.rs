@@ -20,6 +20,8 @@ pub struct AppState {
     pub translate_url: String,
     pub translate_key: Option<String>,
     pub upload_dir: PathBuf,
+    pub admin_username: Option<String>,
+    pub admin_password: Option<String>,
     pub admin_review_token: Option<String>,
     pub recent_deaths_ingest_token: Option<String>,
 }
@@ -53,15 +55,23 @@ async fn main() -> anyhow::Result<()> {
             .to_string(),
         translate_key: env::var("TRANSLATE_API_KEY").ok().filter(|k| !k.is_empty()),
         upload_dir: upload_dir.clone(),
-        admin_review_token: env::var("ADMIN_REVIEW_TOKEN").ok().filter(|k| !k.is_empty()),
+        admin_username: env::var("ADMIN_USERNAME").ok().filter(|value| !value.is_empty()),
+        admin_password: env::var("ADMIN_PASSWORD")
+            .ok()
+            .filter(|value| !value.is_empty()),
+        admin_review_token: env::var("ADMIN_REVIEW_TOKEN")
+            .ok()
+            .filter(|value| !value.is_empty()),
         recent_deaths_ingest_token: env::var("RECENT_DEATHS_INGEST_TOKEN")
             .ok()
-            .filter(|k| !k.is_empty()),
+            .filter(|value| !value.is_empty()),
     };
 
     let app = Router::new()
         .route("/api/health", get(routes::health))
         .route("/api/people", get(routes::list).post(routes::create))
+        .route("/api/admin/login", post(routes::admin_login))
+        .route("/api/admin/logout", post(routes::admin_logout))
         .route("/api/admin/pending-people", get(routes::pending_people))
         .route("/api/admin/pending-people/:id", axum::routing::patch(routes::update_pending_person))
         .route(

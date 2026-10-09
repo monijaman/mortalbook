@@ -2,12 +2,17 @@ use std::{collections::HashMap, path::PathBuf};
 
 use axum::{
     extract::{Multipart, Path, Query, State},
-    http::{header::AUTHORIZATION, HeaderMap},
+    http::{
+        header::{COOKIE, ORIGIN, SET_COOKIE},
+        HeaderMap, StatusCode,
+    },
+    response::{IntoResponse, Response},
     Json,
 };
 use chrono::{Datelike, Duration, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use tokio::{fs, io::AsyncWriteExt};
 use uuid::Uuid;
 
@@ -19,6 +24,8 @@ use crate::{
 };
 
 const PERSON_COLS: &str = "id, name, birth_date, death_date, bio, lang, photo_url, occupation, birth_place, death_place, birth_precision, death_precision, created_at";
+const ADMIN_SESSION_COOKIE: &str = "mortalbook_admin_session";
+const ADMIN_SESSION_HOURS: i64 = 12;
 
 pub async fn health() -> Json<Value> {
     Json(json!({ "status": "ok" }))
@@ -622,20 +629,10 @@ pub struct PendingPersonUpdate {
     death_place: Option<String>,
 }
 
-fn authorize(headers: &HeaderMap, configured: Option<&str>) -> Result<(), AppError> {
-    let expected = configured
-        .filter(|token| !token.is_empty())
-        .ok_or_else(|| AppError::ServiceUnavailable("admin access is not configured".into()))?;
-    let supplied = headers
-        .get(AUTHORIZATION)
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.strip_prefix("Bearer "))
-        .ok_or(AppError::Unauthorized)?;
-    if constant_time_eq(supplied.as_bytes(), expected.as_bytes()) {
-        Ok(())
-    } else {
-        Err(AppError::Unauthorized)
-    }
+#[derive(Deserialize)]
+pub struct AdminLogin {
+    username: String,
+    password: String,
 }
 
 fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
@@ -645,6 +642,178 @@ fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
             ^ right.get(index).copied().unwrap_or(0)) as usize;
     }
     difference == 0
+}
+
+fn verify_same_origin(headers: &HeaderMap) -> Result<(), AppError> {
+    let host = headers
+        .get(axum::http::header::HOST)
+        .and_then(|value| value.to_str().ok())
+        .ok_or(AppError::Unauthorized)?;
+    let origin = headers
+        .get(ORIGIN)
+        .and_then(|value| value.to_str().ok())
+        .ok_or(AppError::Unauthorized)?;
+    let authority = origin
+        .strip_prefix("https://")
+        .or_else(|| origin.strip_prefix("http://"))
+        .filter(|value| !value.is_empty() && !value.contains('/') && !value.contains('@'))
+        .ok_or(AppError::Unauthorized)?;
+    if authority.eq_ignore_ascii_case(host) {
+        Ok(())
+    } else {
+        Err(AppError::Unauthorized)
+    }
+}
+
+fn cookie_session(headers: &HeaderMap) -> Result<String, AppError> {
+    let cookie_header = headers
+        .get(COOKIE)
+        .and_then(|value| value.to_str().ok())
+        .ok_or(AppError::Unauthorized)?;
+    let session = cookie_header
+        .split(';')
+        .filter_map(|cookie| cookie.trim().split_once('='))
+        .find_map(|(name, value)| {
+            (name == ADMIN_SESSION_COOKIE).then_some(value)
+        })
+        .ok_or(AppError::Unauthorized)?;
+    if session.len() != 32 || !session.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err(AppError::Unauthorized);
+    }
+    Ok(session.to_string())
+}
+
+fn authorization_token(headers: &HeaderMap) -> Option<String> {
+    let header_value = headers
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())?
+        .trim();
+    let token = header_value
+        .strip_prefix("Bearer ")
+        .unwrap_or(header_value)
+        .trim();
+    if token.is_empty() {
+        None
+    } else {
+        Some(token.to_string())
+    }
+}
+
+async fn require_admin(
+    headers: &HeaderMap,
+    state: &AppState,
+    require_same_origin: bool,
+) -> Result<(), AppError> {
+    if let Some(token) = authorization_token(headers) {
+        if let Some(expected) = state.admin_review_token.as_deref() {
+            if constant_time_eq(token.as_bytes(), expected.as_bytes()) {
+                return Ok(());
+            }
+        }
+    }
+    if require_same_origin {
+        verify_same_origin(headers)?;
+    }
+    let session = cookie_session(headers)?;
+    let session_hash = hex::encode(Sha256::digest(session.as_bytes()));
+    let valid: bool = sqlx::query_scalar(
+        "SELECT EXISTS (
+            SELECT 1 FROM admin_sessions
+            WHERE session_hash = $1 AND expires_at > now()
+         )",
+    )
+    .bind(session_hash)
+    .fetch_one(&state.db)
+    .await?;
+    if valid {
+        Ok(())
+    } else {
+        Err(AppError::Unauthorized)
+    }
+}
+
+async fn require_recent_death_ingest(
+    headers: &HeaderMap,
+    state: &AppState,
+) -> Result<(), AppError> {
+    if let Some(token) = authorization_token(headers) {
+        if let Some(expected) = state.recent_deaths_ingest_token.as_deref() {
+            if constant_time_eq(token.as_bytes(), expected.as_bytes()) {
+                return Ok(());
+            }
+        }
+    }
+    require_admin(headers, state, true).await
+}
+
+pub async fn admin_login(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+    Json(credentials): Json<AdminLogin>,
+) -> Result<Response, AppError> {
+    verify_same_origin(&headers)?;
+    let (Some(username), Some(password)) = (s.admin_username.as_deref(), s.admin_password.as_deref()) else {
+        return Err(AppError::ServiceUnavailable("admin login is not configured".into()));
+    };
+    if password.chars().count() < 16
+        || !constant_time_eq(credentials.username.as_bytes(), username.as_bytes())
+        || !constant_time_eq(credentials.password.as_bytes(), password.as_bytes())
+    {
+        return Err(AppError::Unauthorized);
+    }
+
+    let session = Uuid::new_v4().simple().to_string();
+    let session_hash = hex::encode(Sha256::digest(session.as_bytes()));
+    sqlx::query("DELETE FROM admin_sessions WHERE expires_at <= now()")
+        .execute(&s.db)
+        .await?;
+    sqlx::query(
+        "INSERT INTO admin_sessions (id, session_hash, expires_at)
+         VALUES ($1, $2, now() + ($3 || ' hours')::interval)",
+    )
+    .bind(Uuid::new_v4())
+    .bind(session_hash)
+    .bind(ADMIN_SESSION_HOURS.to_string())
+    .execute(&s.db)
+    .await?;
+
+    let cookie = format!(
+        "{ADMIN_SESSION_COOKIE}={session}; Path=/api/admin; HttpOnly; Secure; SameSite=Strict; Max-Age={}",
+        ADMIN_SESSION_HOURS * 3600
+    );
+    let cookie = axum::http::HeaderValue::from_str(&cookie)
+        .map_err(|error| AppError::Internal(error.into()))?;
+    Ok((
+        StatusCode::OK,
+        [(SET_COOKIE, cookie)],
+        Json(json!({ "authenticated": true })),
+    )
+        .into_response())
+}
+
+pub async fn admin_logout(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Response, AppError> {
+    verify_same_origin(&headers)?;
+    if let Ok(session) = cookie_session(&headers) {
+        let session_hash = hex::encode(Sha256::digest(session.as_bytes()));
+        sqlx::query("DELETE FROM admin_sessions WHERE session_hash = $1")
+            .bind(session_hash)
+            .execute(&s.db)
+            .await?;
+    }
+    let cookie = format!(
+        "{ADMIN_SESSION_COOKIE}=; Path=/api/admin; HttpOnly; Secure; SameSite=Strict; Max-Age=0"
+    );
+    let cookie = axum::http::HeaderValue::from_str(&cookie)
+        .map_err(|error| AppError::Internal(error.into()))?;
+    Ok((
+        StatusCode::OK,
+        [(SET_COOKIE, cookie)],
+        Json(json!({ "authenticated": false })),
+    )
+        .into_response())
 }
 
 fn normalize_optional_text(
@@ -723,7 +892,7 @@ pub async fn ingest_recent_deaths(
     headers: HeaderMap,
     Json(batch): Json<RecentDeathBatch>,
 ) -> Result<Json<Value>, AppError> {
-    authorize(&headers, s.recent_deaths_ingest_token.as_deref())?;
+    require_recent_death_ingest(&headers, &s).await?;
     if batch.candidates.len() > 200 {
         return Err(AppError::BadRequest("candidate batch exceeds 200 records".into()));
     }
@@ -803,7 +972,7 @@ pub async fn pending_people(
     State(s): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Json<Vec<PendingPerson>>, AppError> {
-    authorize(&headers, s.admin_review_token.as_deref())?;
+    require_admin(&headers, &s, false).await?;
     let pending = sqlx::query_as::<_, PendingPerson>(
         "SELECT id, wikidata_id, name, birth_date, death_date, bio, occupation,
                 birth_place, death_place, wikidata_url, wikipedia_url, created_at, updated_at
@@ -822,7 +991,7 @@ pub async fn update_pending_person(
     Path(id): Path<Uuid>,
     Json(update): Json<PendingPersonUpdate>,
 ) -> Result<Json<Value>, AppError> {
-    authorize(&headers, s.admin_review_token.as_deref())?;
+    require_admin(&headers, &s, true).await?;
     let update = validate_pending_update(update)?;
     let result = sqlx::query(
         "UPDATE pending_people SET
@@ -851,7 +1020,7 @@ pub async fn approve_pending_person(
     headers: HeaderMap,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Value>, AppError> {
-    authorize(&headers, s.admin_review_token.as_deref())?;
+    require_admin(&headers, &s, true).await?;
     let mut tx = s.db.begin().await?;
     let pending = sqlx::query_as::<_, PendingPerson>(
         "SELECT id, wikidata_id, name, birth_date, death_date, bio, occupation,
@@ -910,7 +1079,7 @@ pub async fn reject_pending_person(
     headers: HeaderMap,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Value>, AppError> {
-    authorize(&headers, s.admin_review_token.as_deref())?;
+    require_admin(&headers, &s, true).await?;
     let result = sqlx::query(
         "UPDATE pending_people SET status = 'rejected', reviewed_at = now(), updated_at = now()
          WHERE id = $1 AND status = 'pending'",
