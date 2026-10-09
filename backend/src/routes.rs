@@ -147,6 +147,32 @@ pub async fn week(
     Ok(Json(json!({ "upcoming": upcoming, "recent": recent })))
 }
 
+/// People who died during the two years ending on the supplied date (defaults to today, UTC).
+pub async fn recent(
+    State(s): State<AppState>,
+    Query(q): Query<WeekQuery>,
+) -> Result<Json<Vec<Person>>, AppError> {
+    let now = Utc::now().date_naive();
+    let through = NaiveDate::from_ymd_opt(
+        q.year.unwrap_or(now.year()),
+        q.month.unwrap_or(now.month()),
+        q.day.unwrap_or(now.day()),
+    )
+    .ok_or_else(|| AppError::BadRequest("invalid date".into()))?;
+
+    let people = sqlx::query_as::<_, Person>(&format!(
+        "SELECT {PERSON_COLS} FROM people
+         WHERE death_precision = 'day'
+           AND death_date >= $1::date - INTERVAL '2 years'
+           AND death_date <= $1
+         ORDER BY death_date DESC, photo_url IS NULL, name"
+    ))
+    .bind(through)
+    .fetch_all(&s.db)
+    .await?;
+    Ok(Json(people))
+}
+
 fn country_place_patterns(country: &str) -> Vec<String> {
     let terms: &[&str] = match country.to_ascii_lowercase().as_str() {
         "bangladesh" => &[

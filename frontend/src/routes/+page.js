@@ -8,13 +8,31 @@ export async function load({ fetch, url }) {
   const country = url.searchParams.get('country')?.trim();
   if (country) params.set('country', country);
 
-  const [todayResponse, weekResponse] = await Promise.all([
+  const [todayResponse, weekResponse, recentResponse] = await Promise.all([
     fetch(`/api/people/today?${params}`),
-    fetch(`/api/people/week?${params}`)
+    fetch(`/api/people/week?${params}`),
+    fetch(`/api/people/recent?${params}`)
   ]);
+  let recentlyLost = [];
+  let recentPeopleFailed = false;
+  if (recentResponse.ok) {
+    recentlyLost = await recentResponse.json();
+  } else {
+    console.error(`Recently lost people request failed: ${recentResponse.status}`);
+    recentPeopleFailed = true;
+  }
+
   if (!todayResponse.ok) {
     console.error(`Today's people request failed: ${todayResponse.status}`);
-    return { people: [], upcoming: [], recent: [], date: today.toISOString().slice(0, 10), failed: true };
+    return {
+      people: [],
+      upcoming: [],
+      recent: [],
+      recentlyLost,
+      recentPeopleFailed,
+      date: today.toISOString().slice(0, 10),
+      failed: true
+    };
   }
 
   const people = await todayResponse.json();
@@ -26,5 +44,13 @@ export async function load({ fetch, url }) {
     console.error(`Weekly people request failed: ${weekResponse.status}`);
   }
 
-  return { people, upcoming, recent, date: today.toISOString().slice(0, 10), failed: false };
+  return {
+    people,
+    upcoming,
+    recent,
+    recentlyLost,
+    recentPeopleFailed,
+    date: today.toISOString().slice(0, 10),
+    failed: false
+  };
 }

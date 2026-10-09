@@ -13,6 +13,9 @@
   let people = $state(untrack(() => data.people));
   let upcoming = $state(untrack(() => data.upcoming));
   let recent = $state(untrack(() => data.recent));
+  let recentlyLost = $state(untrack(() => data.recentlyLost || []));
+  let recentPeopleLoading = $state(false);
+  let recentPeopleFailed = $state(untrack(() => data.recentPeopleFailed || false));
   let loading = $state(false);
   let failed = $state(untrack(() => data.failed));
   let today = $state(untrack(() => new Date(`${data.date}T12:00:00`)));
@@ -56,18 +59,40 @@
       if (country) params.set('country', country);
       loading = true;
       failed = false;
+      recentPeopleLoading = true;
+      recentPeopleFailed = false;
       upcoming = [];
       recent = [];
 
-      Promise.all([
+      Promise.allSettled([
         fetch(`/api/people/today?${params}`, { signal: currentController.signal }),
-        fetch(`/api/people/week?${params}`, { signal: currentController.signal })
+        fetch(`/api/people/week?${params}`, { signal: currentController.signal }),
+        fetch(`/api/people/recent?${params}`, { signal: currentController.signal })
       ])
-        .then(async ([todayResponse, weekResponse]) => {
+        .then(async ([todayResult, weekResult, recentResult]) => {
+          if (todayResult.status === 'rejected') throw todayResult.reason;
+          const todayResponse = todayResult.value;
           if (!todayResponse.ok) throw new Error(`Today's people request failed: ${todayResponse.status}`);
           people = sortByLocation(await todayResponse.json(), country);
-          if (weekResponse.ok) ({ upcoming, recent } = await weekResponse.json());
-          else console.error(`Weekly people request failed: ${weekResponse.status}`);
+
+          if (weekResult.status === 'fulfilled' && weekResult.value.ok) {
+            ({ upcoming, recent } = await weekResult.value.json());
+          } else {
+            const error = weekResult.status === 'rejected'
+              ? weekResult.reason
+              : `Weekly people request failed: ${weekResult.value.status}`;
+            console.error(error);
+          }
+
+          if (recentResult.status === 'fulfilled' && recentResult.value.ok) {
+            recentlyLost = sortByLocation(await recentResult.value.json(), country);
+          } else {
+            recentPeopleFailed = true;
+            const error = recentResult.status === 'rejected'
+              ? recentResult.reason
+              : `Recently lost people request failed: ${recentResult.value.status}`;
+            console.error(error);
+          }
         })
         .catch((error) => {
           if (error.name !== 'AbortError') {
@@ -76,7 +101,10 @@
           }
         })
         .finally(() => {
-          if (!currentController.signal.aborted) loading = false;
+          if (!currentController.signal.aborted) {
+            loading = false;
+            recentPeopleLoading = false;
+          }
         });
     });
 
@@ -140,6 +168,23 @@
     </div>
   </section>
 {/if}
+
+<section class="block">
+  <h2><T text="Whom we lost recently" /></h2>
+  {#if recentPeopleLoading}
+    <p class="muted center"><T text="Loading…" /></p>
+  {:else if recentPeopleFailed}
+    <p class="muted center"><T text="Recently remembered people could not be loaded." /></p>
+  {:else if recentlyLost.length === 0}
+    <p class="muted center"><T text="No one in our book has passed away in the last two years." /></p>
+  {:else}
+    <div class="grid">
+      {#each recentlyLost as person (person.id)}
+        <PersonCard {person} showAgo />
+      {/each}
+    </div>
+  {/if}
+</section>
 
 {#if upcoming.length}
   <section class="block">
