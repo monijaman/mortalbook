@@ -647,8 +647,11 @@ fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
 }
 
 fn verify_same_origin(headers: &HeaderMap) -> Result<(), AppError> {
+    // The frontend proxy sets X-Forwarded-Host to the public host; the backend is not
+    // exposed directly, so fall back to Host for direct calls.
     let host = headers
-        .get(axum::http::header::HOST)
+        .get("x-forwarded-host")
+        .or_else(|| headers.get(axum::http::header::HOST))
         .and_then(|value| value.to_str().ok())
         .ok_or(AppError::Unauthorized)?;
     let origin = headers
