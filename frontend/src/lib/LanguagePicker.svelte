@@ -51,7 +51,7 @@
 </label>
 
 <style>
-  .picker { display: inline-flex; align-items: center; gap: 0.5rem; margin-left: auto; }
+  .picker { display: inline-flex; align-items: center; gap: 0.5rem; }
   .label { color: var(--muted); font-size: 0.95rem; white-space: nowrap; }
   select {
     background: var(--panel); color: var(--text); border: 1px solid var(--accent);
