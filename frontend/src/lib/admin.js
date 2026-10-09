@@ -24,5 +24,6 @@ export async function adminApi(path, options = {}) {
 
 export async function logout() {
   await fetch('/api/admin/logout', { method: 'POST' }).catch(() => {});
+  try { localStorage.removeItem('mortalbook-admin'); } catch {}
   await goto('/admin/login');
 }

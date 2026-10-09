@@ -9,7 +9,10 @@
 
   onMount(async () => {
     const res = await fetch('/api/admin/me');
-    if (res.ok) await goto('/admin');
+    if (res.ok) {
+      try { localStorage.setItem('mortalbook-admin', '1'); } catch {}
+      await goto('/admin');
+    }
   });
 
   async function submit(event) {
@@ -26,6 +29,7 @@
       if (res.status === 401) throw new Error('Wrong username or password.');
       if (!res.ok) throw new Error(body.error || `Error ${res.status}`);
       password = '';
+      try { localStorage.setItem('mortalbook-admin', '1'); } catch {}
       await goto('/admin');
     } catch (err) {
       error = err.message;

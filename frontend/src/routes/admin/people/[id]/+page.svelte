@@ -3,6 +3,7 @@
   import { page } from '$app/stores';
   import { onMount } from 'svelte';
   import { adminApi } from '$lib/admin.js';
+  import StoryEditor from '$lib/StoryEditor.svelte';
 
   const PRECISIONS = ['day', 'month', 'year', 'decade', 'century'];
   const id = $page.params.id;
@@ -10,6 +11,18 @@
   let error = $state('');
   let notice = $state('');
   let busy = $state(false);
+  let saved = $state('');
+  const dirty = $derived(person !== null && JSON.stringify(person) !== saved);
+
+  function onKeydown(event) {
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
+      event.preventDefault();
+      if (person && !busy) save(event);
+    }
+  }
+  function beforeUnload(event) {
+    if (dirty) event.preventDefault();
+  }
 
   onMount(async () => {
     try {
@@ -18,6 +31,7 @@
       const res = await fetch(`/api/people/${id}`);
       if (!res.ok) throw new Error('Person not found.');
       person = await res.json();
+      saved = JSON.stringify(person);
     } catch (err) {
       error = err.message;
     }
@@ -44,6 +58,7 @@
           death_precision: person.death_precision
         })
       });
+      saved = JSON.stringify(person);
       notice = 'Saved.';
     } catch (err) {
       error = err.message;
@@ -67,6 +82,8 @@
   <title>Edit person — Mortalbook</title>
   <meta name="robots" content="noindex,nofollow" />
 </svelte:head>
+
+<svelte:window onkeydown={onKeydown} onbeforeunload={beforeUnload} />
 
 <p><a href="/admin">← All people</a></p>
 <h1>Edit person</h1>
@@ -100,9 +117,10 @@
       <label><span>Birth place</span><input bind:value={person.birth_place} maxlength="300" /></label>
       <label><span>Death place</span><input bind:value={person.death_place} maxlength="300" /></label>
     </div>
-    <label><span>Story</span><textarea bind:value={person.bio} rows="10" maxlength="10000"></textarea></label>
+    <StoryEditor bind:value={person.bio} />
     <div class="actions">
-      <button type="submit" disabled={busy}>{busy ? 'Saving…' : 'Save changes'}</button>
+      <button type="submit" disabled={busy || !dirty}>{busy ? 'Saving…' : 'Save changes (Ctrl+S)'}</button>
+      {#if dirty}<span class="muted">Unsaved changes</span>{/if}
       <a href={`/people/${id}`}>View public page</a>
       <button type="button" class="danger" onclick={remove}>Delete</button>
     </div>
@@ -110,7 +128,8 @@
 {/if}
 
 <style>
-  form { display: grid; gap: 1.1rem; max-width: 680px; margin-top: 1rem; }
+  form { display: grid; gap: 1.1rem; max-width: 1100px; margin-top: 1rem; }
+  .row, label { max-width: 680px; }
   label span { display: block; margin-bottom: 0.3rem; color: var(--muted); font-size: 0.95rem; }
   .row { display: grid; gap: 1rem; grid-template-columns: 1fr 1fr; }
   .actions { display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; }

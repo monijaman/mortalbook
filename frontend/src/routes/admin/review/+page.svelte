@@ -1,6 +1,7 @@
 <script>
   import { onMount } from 'svelte';
   import { adminApi, logout } from '$lib/admin.js';
+  import StoryEditor from '$lib/StoryEditor.svelte';
 
   let people = $state([]);
   let error = $state('');
@@ -143,10 +144,7 @@
             <input bind:value={person.death_place} maxlength="300" />
           </label>
         </div>
-        <label>
-          <span>Verified story (required before approval)</span>
-          <textarea bind:value={person.bio} rows="5" maxlength="10000" required></textarea>
-        </label>
+        <StoryEditor bind:value={person.bio} label="Verified story (required before approval)" rows={8} />
         <div class="actions">
           <button type="submit" disabled={busyId === person.id}>
             {busyId === person.id ? 'Saving…' : 'Save edits'}
