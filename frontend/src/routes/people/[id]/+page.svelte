@@ -1,6 +1,8 @@
 <script>
   import { onMount } from 'svelte';
   import T from '$lib/T.svelte';
+  import Story from '$lib/Story.svelte';
+  import { plainText } from '$lib/markdown.js';
   import { lang } from '$lib/i18n.js';
   import { dateLabel, ageAt, embedUrl } from '$lib/format.js';
   import { canonicalUrl, DEFAULT_IMAGE, jsonLd, personDescription } from '$lib/seo.js';
@@ -25,7 +27,7 @@
   const age = $derived(
     p.birth_date && exact(p.birth_precision) && exact(p.death_precision) ? ageAt(p.birth_date, p.death_date) : null
   );
-  const paragraphs = $derived(p.bio.split(/\n{2,}/).filter((s) => s.trim()));
+  const hasStory = $derived(p.bio.trim().length > 0);
   const description = $derived(personDescription(p));
   const url = $derived(canonicalUrl(`/people/${p.id}`));
   const structuredData = $derived({
@@ -87,11 +89,9 @@
     </dl>
   {/if}
 
-  {#if paragraphs.length}
+  {#if hasStory}
     <section class="bio">
-      {#each paragraphs as para}
-        <p><T text={para} from={p.lang || 'auto'} /></p>
-      {/each}
+      <Story bio={p.bio} from={p.lang || 'auto'} />
     </section>
   {/if}
 

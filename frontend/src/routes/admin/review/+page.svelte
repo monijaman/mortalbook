@@ -144,7 +144,7 @@
             <input bind:value={person.death_place} maxlength="300" />
           </label>
         </div>
-        <StoryEditor bind:value={person.bio} label="Verified story (required before approval)" rows={8} />
+        <StoryEditor bind:value={person.bio} label="Verified story (required before approval)" />
         <div class="actions">
           <button type="submit" disabled={busyId === person.id}>
             {busyId === person.id ? 'Saving…' : 'Save edits'}

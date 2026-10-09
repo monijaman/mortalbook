@@ -1,6 +1,7 @@
 <script>
   import T from '$lib/T.svelte';
   import { years, yearLabel } from '$lib/format.js';
+  import { plainText } from '$lib/markdown.js';
 
   // One person at a time, `interval` ms each, cross-fading.
   let { people, interval = 7000 } = $props();
@@ -23,7 +24,7 @@
   });
 
   const excerpt = (bio) => {
-    const text = bio.split('\n\nSource:')[0].trim();
+    const text = plainText(bio.split('\n\nSource:')[0]).trim();
     return text.length > 320 ? text.slice(0, 320).trimEnd() + '…' : text;
   };
 </script>
