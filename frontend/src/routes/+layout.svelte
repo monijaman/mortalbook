@@ -44,7 +44,7 @@
 <style>
   header {
     display: flex; flex-wrap: wrap; align-items: center; gap: 1rem 2rem; justify-content: space-between;
-    padding: 0.9rem 1.5rem; border-bottom: 1px solid var(--line); background: rgba(16, 17, 20, 0.85);
+    padding: 0.9rem 1.5rem; border-bottom: 1px solid var(--line); background: rgba(250, 248, 245, 0.92);
     position: sticky; top: 0; backdrop-filter: blur(6px); z-index: 10;
   }
   .brand { font-size: 1.5rem; color: var(--text); text-decoration: none; letter-spacing: 0.06em; }

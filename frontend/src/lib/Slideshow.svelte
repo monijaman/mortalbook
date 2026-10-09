@@ -85,10 +85,10 @@
   .slide {
     display: grid; grid-template-columns: 1fr; gap: 1rem;
     align-items: center; padding: 1.6rem; border: 1px solid var(--line); border-radius: 14px;
-    background: linear-gradient(135deg, #17191d, #131417);
+    background: linear-gradient(135deg, var(--surface), var(--panel));
     animation: fade-in 1.2s ease;
   }
-  .photo { aspect-ratio: 3 / 4; background: #0b0c0e; border-radius: 10px; overflow: hidden; }
+  .photo { aspect-ratio: 3 / 4; background: var(--photo-placeholder); border-radius: 10px; overflow: hidden; }
   img { width: 100%; height: 100%; object-fit: cover; filter: grayscale(0.75) contrast(0.95); }
   .placeholder { height: 100%; display: grid; place-items: center; font-size: 4rem; color: var(--muted); }
   h2 { font-size: clamp(1.8rem, 4vw, 2.8rem); margin: 0; }

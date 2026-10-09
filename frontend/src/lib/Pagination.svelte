@@ -42,7 +42,7 @@
   }
   .pager a:not(.btn) { border: 1px solid var(--line); color: var(--text); }
   .pager a:not(.btn):hover { border-color: var(--accent); color: var(--accent); }
-  .current { background: var(--accent); color: #17140c; }
+  .current { background: var(--accent); color: var(--accent-contrast); }
   .gap { color: var(--muted); }
   .pager .btn { padding: 0.4rem 1rem; }
 </style>

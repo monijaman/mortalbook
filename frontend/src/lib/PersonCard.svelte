@@ -42,8 +42,8 @@
     transition: border-color 0.2s, transform 0.2s;
   }
   .card:hover { border-color: var(--accent); transform: translateY(-2px); }
-  .photo { aspect-ratio: 4 / 3; background: #0b0c0e; position: relative; }
-  .badge { position: absolute; top: 0.6rem; left: 0.6rem; z-index: 1; background: rgba(16, 17, 20, 0.85); color: var(--accent); border: 1px solid var(--accent); border-radius: 999px; padding: 0.1rem 0.7rem; font-size: 0.9rem; }
+  .photo { aspect-ratio: 4 / 3; background: var(--photo-placeholder); position: relative; }
+  .badge { position: absolute; top: 0.6rem; left: 0.6rem; z-index: 1; background: rgba(255, 253, 249, 0.92); color: var(--accent); border: 1px solid var(--accent); border-radius: 999px; padding: 0.1rem 0.7rem; font-size: 0.9rem; }
   img { width: 100%; height: 100%; object-fit: cover; filter: grayscale(0.85) contrast(0.95); }
   .card:hover img { filter: grayscale(0.2); }
   .placeholder { height: 100%; display: grid; place-items: center; font-size: 2.5rem; color: var(--muted); }
