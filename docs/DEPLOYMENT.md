@@ -94,6 +94,14 @@ curl -s http://127.0.0.1:3020/api/health        # {"status":"ok"}
 
 On first start the backend runs the migrations, including `0002_seed_people.sql` (140 seeded people).
 
+The recent-death review queue also needs two distinct random tokens in the server `.env`:
+
+```bash
+grep -q '^ADMIN_REVIEW_TOKEN=' .env || printf 'ADMIN_REVIEW_TOKEN=%s\n' "$(openssl rand -hex 32)" >> .env
+grep -q '^RECENT_DEATHS_INGEST_TOKEN=' .env || printf 'RECENT_DEATHS_INGEST_TOKEN=%s\n' "$(openssl rand -hex 32)" >> .env
+docker compose up -d --build
+```
+
 ### 3. nginx
 
 ```bash
@@ -211,7 +219,24 @@ cd /var/www/mortalbook
 docker compose up -d --build
 ```
 
-New migrations run automatically when the backend starts.
+New migrations run automatically when the backend starts, including the private recent-death review queue.
+
+### Recent-death review queue
+
+The separate `.github/workflows/recent-deaths.yml` workflow runs at 00:00, 06:00, 12:00, and
+18:00 UTC (06:00, 12:00, 18:00, and midnight in Bangladesh). It fetches notable death candidates
+from Wikidata and submits them to the private review queue; it never publishes candidates itself.
+
+To enable it:
+
+1. Set the server `.env` values `ADMIN_REVIEW_TOKEN` and `RECENT_DEATHS_INGEST_TOKEN` to separate
+   random secrets and restart the backend with `docker compose up -d --build`.
+2. Add a GitHub Actions repository secret named `RECENT_DEATHS_INGEST_TOKEN` with the same value
+   as the server's ingest token. Optionally set the Actions variable `MORTALBOOK_API_URL` if using
+   a non-production API URL; it defaults to `https://mortalbook.com`.
+3. Open `/admin/review` over HTTPS and enter the server's `ADMIN_REVIEW_TOKEN`. Review each
+   candidate's sources and details, edit its story, and approve or reject it. Approval is the
+   only operation that copies a candidate into the public `people` catalog.
 
 ## Operations
 

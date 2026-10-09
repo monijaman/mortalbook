@@ -2,6 +2,7 @@ use std::{collections::HashMap, path::PathBuf};
 
 use axum::{
     extract::{Multipart, Path, Query, State},
+    http::{header::AUTHORIZATION, HeaderMap},
     Json,
 };
 use chrono::{Datelike, Duration, NaiveDate, Utc};
@@ -12,7 +13,7 @@ use uuid::Uuid;
 
 use crate::{
     error::AppError,
-    models::{Media, Person, PersonDetail},
+    models::{Media, PendingPerson, Person, PersonDetail},
     translate::{self, TranslateRequest, TranslateResponse},
     AppState,
 };
@@ -593,6 +594,336 @@ pub async fn languages(State(s): State<AppState>) -> Result<Json<Value>, AppErro
     Ok(Json(translate::languages(&s).await?))
 }
 
+#[derive(Deserialize)]
+pub struct RecentDeathBatch {
+    candidates: Vec<RecentDeathCandidate>,
+}
+
+#[derive(Clone, Deserialize)]
+pub struct RecentDeathCandidate {
+    wikidata_id: String,
+    name: String,
+    birth_date: Option<NaiveDate>,
+    death_date: NaiveDate,
+    occupation: Option<String>,
+    birth_place: Option<String>,
+    death_place: Option<String>,
+    wikipedia_url: String,
+}
+
+#[derive(Deserialize)]
+pub struct PendingPersonUpdate {
+    name: String,
+    birth_date: Option<NaiveDate>,
+    death_date: NaiveDate,
+    bio: String,
+    occupation: Option<String>,
+    birth_place: Option<String>,
+    death_place: Option<String>,
+}
+
+fn authorize(headers: &HeaderMap, configured: Option<&str>) -> Result<(), AppError> {
+    let expected = configured
+        .filter(|token| !token.is_empty())
+        .ok_or_else(|| AppError::ServiceUnavailable("admin access is not configured".into()))?;
+    let supplied = headers
+        .get(AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.strip_prefix("Bearer "))
+        .ok_or(AppError::Unauthorized)?;
+    if constant_time_eq(supplied.as_bytes(), expected.as_bytes()) {
+        Ok(())
+    } else {
+        Err(AppError::Unauthorized)
+    }
+}
+
+fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
+    let mut difference = left.len() ^ right.len();
+    for index in 0..left.len().max(right.len()) {
+        difference |= (left.get(index).copied().unwrap_or(0)
+            ^ right.get(index).copied().unwrap_or(0)) as usize;
+    }
+    difference == 0
+}
+
+fn normalize_optional_text(
+    value: &mut Option<String>,
+    label: &str,
+    max_chars: usize,
+) -> Result<(), AppError> {
+    if let Some(text) = value.take() {
+        let normalized = text.trim().to_string();
+        if normalized.is_empty() {
+            return Ok(());
+        }
+        if normalized.chars().count() > max_chars {
+            return Err(AppError::BadRequest(format!("{label} is too long")));
+        }
+        *value = Some(normalized);
+    }
+    Ok(())
+}
+
+fn validate_recent_death_candidate(
+    mut candidate: RecentDeathCandidate,
+) -> Result<RecentDeathCandidate, AppError> {
+    candidate.name = candidate.name.trim().to_string();
+    candidate.wikidata_id = candidate.wikidata_id.trim().to_string();
+    if candidate.name.is_empty() || candidate.name.chars().count() > 200 {
+        return Err(AppError::BadRequest("candidate name must be 1–200 characters".into()));
+    }
+    if candidate.wikidata_id.len() < 2
+        || !candidate.wikidata_id.starts_with('Q')
+        || !candidate.wikidata_id[1..].bytes().all(|byte| byte.is_ascii_digit())
+    {
+        return Err(AppError::BadRequest("invalid Wikidata identifier".into()));
+    }
+    if candidate.birth_date.is_some_and(|birth| birth > candidate.death_date) {
+        return Err(AppError::BadRequest("birth date must not be after death date".into()));
+    }
+    let today = Utc::now().date_naive();
+    if candidate.death_date < today - Duration::days(7) || candidate.death_date > today {
+        return Err(AppError::BadRequest("candidate death date must be within the past seven days".into()));
+    }
+    if !candidate.wikipedia_url.starts_with("https://en.wikipedia.org/wiki/")
+        || candidate.wikipedia_url.len() > 1000
+    {
+        return Err(AppError::BadRequest("candidate must include an English Wikipedia article URL".into()));
+    }
+    normalize_optional_text(&mut candidate.occupation, "occupation", 500)?;
+    normalize_optional_text(&mut candidate.birth_place, "birth place", 300)?;
+    normalize_optional_text(&mut candidate.death_place, "death place", 300)?;
+    Ok(candidate)
+}
+
+fn validate_pending_update(mut update: PendingPersonUpdate) -> Result<PendingPersonUpdate, AppError> {
+    update.name = update.name.trim().to_string();
+    update.bio = update.bio.trim().to_string();
+    if update.name.is_empty() || update.name.chars().count() > 200 {
+        return Err(AppError::BadRequest("name is required (max 200 characters)".into()));
+    }
+    if update.bio.is_empty() || update.bio.chars().count() > 10_000 {
+        return Err(AppError::BadRequest("reviewed story is required (max 10000 characters)".into()));
+    }
+    if update.birth_date.is_some_and(|birth| birth > update.death_date) {
+        return Err(AppError::BadRequest("birth date must not be after death date".into()));
+    }
+    if update.death_date > Utc::now().date_naive() {
+        return Err(AppError::BadRequest("death date cannot be in the future".into()));
+    }
+    normalize_optional_text(&mut update.occupation, "occupation", 500)?;
+    normalize_optional_text(&mut update.birth_place, "birth place", 300)?;
+    normalize_optional_text(&mut update.death_place, "death place", 300)?;
+    Ok(update)
+}
+
+pub async fn ingest_recent_deaths(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+    Json(batch): Json<RecentDeathBatch>,
+) -> Result<Json<Value>, AppError> {
+    authorize(&headers, s.recent_deaths_ingest_token.as_deref())?;
+    if batch.candidates.len() > 200 {
+        return Err(AppError::BadRequest("candidate batch exceeds 200 records".into()));
+    }
+
+    let mut seen = std::collections::HashSet::new();
+    let mut candidates = Vec::with_capacity(batch.candidates.len());
+    for candidate in batch.candidates {
+        let candidate = validate_recent_death_candidate(candidate)?;
+        if seen.insert(candidate.wikidata_id.clone()) {
+            candidates.push(candidate);
+        }
+    }
+
+    let mut inserted = 0_u64;
+    let mut tx = s.db.begin().await?;
+    for candidate in candidates {
+        let public_duplicate: bool = sqlx::query_scalar(
+            "SELECT EXISTS (
+                SELECT 1 FROM people
+                WHERE lower(name) = lower($1) AND death_date = $2
+             )",
+        )
+        .bind(&candidate.name)
+        .bind(candidate.death_date)
+        .fetch_one(&mut *tx)
+        .await?;
+        if public_duplicate {
+            continue;
+        }
+        let pending_duplicate: bool = sqlx::query_scalar(
+            "SELECT EXISTS (
+                SELECT 1 FROM pending_people
+                WHERE lower(name) = lower($1) AND death_date = $2
+                  AND wikidata_id <> $3 AND status = 'pending'
+             )",
+        )
+        .bind(&candidate.name)
+        .bind(candidate.death_date)
+        .bind(&candidate.wikidata_id)
+        .fetch_one(&mut *tx)
+        .await?;
+        if pending_duplicate {
+            continue;
+        }
+        let wikidata_url = format!("https://www.wikidata.org/wiki/{}", candidate.wikidata_id);
+        let bio = format!(
+            "Review required: verify this candidate's death and biography before approval.\n\nWikidata: {wikidata_url}\nEnglish Wikipedia: {}",
+            candidate.wikipedia_url
+        );
+        let result = sqlx::query(
+            "INSERT INTO pending_people (
+                id, wikidata_id, name, birth_date, death_date, bio, occupation,
+                birth_place, death_place, wikidata_url, wikipedia_url
+             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+             ON CONFLICT (wikidata_id) DO NOTHING",
+        )
+        .bind(Uuid::new_v4())
+        .bind(&candidate.wikidata_id)
+        .bind(&candidate.name)
+        .bind(candidate.birth_date)
+        .bind(candidate.death_date)
+        .bind(bio)
+        .bind(candidate.occupation)
+        .bind(candidate.birth_place)
+        .bind(candidate.death_place)
+        .bind(wikidata_url)
+        .bind(candidate.wikipedia_url)
+        .execute(&mut *tx)
+        .await?;
+        inserted += result.rows_affected();
+    }
+    tx.commit().await?;
+    Ok(Json(json!({ "queued": inserted })))
+}
+
+pub async fn pending_people(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<PendingPerson>>, AppError> {
+    authorize(&headers, s.admin_review_token.as_deref())?;
+    let pending = sqlx::query_as::<_, PendingPerson>(
+        "SELECT id, wikidata_id, name, birth_date, death_date, bio, occupation,
+                birth_place, death_place, wikidata_url, wikipedia_url, created_at, updated_at
+         FROM pending_people
+         WHERE status = 'pending'
+         ORDER BY death_date DESC, name",
+    )
+    .fetch_all(&s.db)
+    .await?;
+    Ok(Json(pending))
+}
+
+pub async fn update_pending_person(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+    Json(update): Json<PendingPersonUpdate>,
+) -> Result<Json<Value>, AppError> {
+    authorize(&headers, s.admin_review_token.as_deref())?;
+    let update = validate_pending_update(update)?;
+    let result = sqlx::query(
+        "UPDATE pending_people SET
+            name = $2, birth_date = $3, death_date = $4, bio = $5, occupation = $6,
+            birth_place = $7, death_place = $8, updated_at = now()
+         WHERE id = $1 AND status = 'pending'",
+    )
+    .bind(id)
+    .bind(update.name)
+    .bind(update.birth_date)
+    .bind(update.death_date)
+    .bind(update.bio)
+    .bind(update.occupation)
+    .bind(update.birth_place)
+    .bind(update.death_place)
+    .execute(&s.db)
+    .await?;
+    if result.rows_affected() == 0 {
+        return Err(AppError::NotFound);
+    }
+    Ok(Json(json!({ "updated": true })))
+}
+
+pub async fn approve_pending_person(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Value>, AppError> {
+    authorize(&headers, s.admin_review_token.as_deref())?;
+    let mut tx = s.db.begin().await?;
+    let pending = sqlx::query_as::<_, PendingPerson>(
+        "SELECT id, wikidata_id, name, birth_date, death_date, bio, occupation,
+                birth_place, death_place, wikidata_url, wikipedia_url, created_at, updated_at
+         FROM pending_people
+         WHERE id = $1 AND status = 'pending'
+         FOR UPDATE",
+    )
+    .bind(id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or(AppError::NotFound)?;
+    if pending.bio.starts_with("Review required:") {
+        return Err(AppError::BadRequest(
+            "edit the candidate story after verifying it before approval".into(),
+        ));
+    }
+    let bio = format!(
+        "{}\n\nSources:\nWikidata: {}\nEnglish Wikipedia: {}",
+        pending.bio, pending.wikidata_url, pending.wikipedia_url
+    );
+    sqlx::query(
+        "INSERT INTO people (
+            id, name, birth_date, death_date, bio, lang, occupation, birth_place, death_place,
+            birth_precision, death_precision
+         )
+         SELECT $1, $2, $3, $4, $5, 'en', $6, $7, $8,
+                CASE WHEN $3 IS NULL THEN 'year' ELSE 'day' END, 'day'
+         WHERE NOT EXISTS (
+            SELECT 1 FROM people WHERE lower(name) = lower($2) AND death_date = $4
+         )",
+    )
+    .bind(Uuid::new_v4())
+    .bind(&pending.name)
+    .bind(pending.birth_date)
+    .bind(pending.death_date)
+    .bind(bio)
+    .bind(&pending.occupation)
+    .bind(&pending.birth_place)
+    .bind(&pending.death_place)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query(
+        "UPDATE pending_people SET status = 'approved', reviewed_at = now(), updated_at = now()
+         WHERE id = $1",
+    )
+    .bind(id)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(Json(json!({ "approved": true })))
+}
+
+pub async fn reject_pending_person(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Value>, AppError> {
+    authorize(&headers, s.admin_review_token.as_deref())?;
+    let result = sqlx::query(
+        "UPDATE pending_people SET status = 'rejected', reviewed_at = now(), updated_at = now()
+         WHERE id = $1 AND status = 'pending'",
+    )
+    .bind(id)
+    .execute(&s.db)
+    .await?;
+    if result.rows_affected() == 0 {
+        return Err(AppError::NotFound);
+    }
+    Ok(Json(json!({ "rejected": true })))
+}
+
 #[cfg(test)]
 mod country_filter_tests {
     use super::*;
@@ -656,5 +987,12 @@ mod country_filter_tests {
 
         assert_eq!(results.len(), 10);
         assert!(results.iter().all(|person| person.name.starts_with("Local")));
+    }
+
+    #[test]
+    fn bearer_token_comparison_checks_the_entire_token() {
+        assert!(constant_time_eq(b"admin-token", b"admin-token"));
+        assert!(!constant_time_eq(b"admin-token", b"admin-tokeN"));
+        assert!(!constant_time_eq(b"admin-token", b"admin-token-extra"));
     }
 }

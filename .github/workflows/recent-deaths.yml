@@ -1,0 +1,29 @@
+name: Queue recent deaths for admin review
+
+on:
+  schedule:
+    - cron: "0 0,6,12,18 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: recent-deaths-ingest
+  cancel-in-progress: false
+
+jobs:
+  queue-candidates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - name: Test candidate processing
+        run: python -m unittest tools.test_generate_recent_deaths
+      - name: Submit recent-death candidates to the review queue
+        env:
+          MORTALBOOK_API_URL: ${{ vars.MORTALBOOK_API_URL || 'https://mortalbook.com' }}
+          RECENT_DEATHS_INGEST_TOKEN: ${{ secrets.RECENT_DEATHS_INGEST_TOKEN }}
+        run: python tools/generate_recent_deaths.py

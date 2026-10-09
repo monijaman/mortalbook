@@ -32,6 +32,7 @@
 
 <h1><T text="Add someone you remember" /></h1>
 <p class="muted"><T text="Write in any language — visitors will read it in their own." /></p>
+<p><a href="/admin/review">Review automated recent-death candidates</a></p>
 
 <form onsubmit={submit}>
   <label>

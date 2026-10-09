@@ -10,6 +10,8 @@ A place to remember people who have passed away. Rust (axum + sqlx) API, SvelteK
 - **Translation** – the visitor's browser language is detected on first visit and all UI text and
   stories are translated into it. A language picker sits at the top. Stories are tagged with their
   detected source language when submitted. Translations are cached in Postgres.
+- **Recent-death review** (`/admin/review`) – scheduled public-figure candidates are held privately
+  until an authenticated admin verifies, edits, and approves them.
 - **Add a person** (`/admin`) – open to anyone for now (no login).
 
 ## Run everything
@@ -39,4 +41,8 @@ See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) (Contabo VPS, nginx, HTTPS, backups
 
 ## Not built yet
 
-Email/SMS reminders, accounts/login, moderation, rate-limiting on submissions.
+Email/SMS reminders, visitor accounts/login, rate-limiting on public submissions.
+
+The recent-death review queue uses `ADMIN_REVIEW_TOKEN` for the admin page and
+`RECENT_DEATHS_INGEST_TOKEN` for the scheduled GitHub Actions workflow. See
+[deployment setup](./docs/DEPLOYMENT.md#recent-death-review-queue) before enabling it.

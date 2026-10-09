@@ -20,6 +20,8 @@ pub struct AppState {
     pub translate_url: String,
     pub translate_key: Option<String>,
     pub upload_dir: PathBuf,
+    pub admin_review_token: Option<String>,
+    pub recent_deaths_ingest_token: Option<String>,
 }
 
 const MAX_UPLOAD_BYTES: usize = 300 * 1024 * 1024;
@@ -51,11 +53,29 @@ async fn main() -> anyhow::Result<()> {
             .to_string(),
         translate_key: env::var("TRANSLATE_API_KEY").ok().filter(|k| !k.is_empty()),
         upload_dir: upload_dir.clone(),
+        admin_review_token: env::var("ADMIN_REVIEW_TOKEN").ok().filter(|k| !k.is_empty()),
+        recent_deaths_ingest_token: env::var("RECENT_DEATHS_INGEST_TOKEN")
+            .ok()
+            .filter(|k| !k.is_empty()),
     };
 
     let app = Router::new()
         .route("/api/health", get(routes::health))
         .route("/api/people", get(routes::list).post(routes::create))
+        .route("/api/admin/pending-people", get(routes::pending_people))
+        .route("/api/admin/pending-people/:id", axum::routing::patch(routes::update_pending_person))
+        .route(
+            "/api/admin/pending-people/:id/approve",
+            post(routes::approve_pending_person),
+        )
+        .route(
+            "/api/admin/pending-people/:id/reject",
+            post(routes::reject_pending_person),
+        )
+        .route(
+            "/api/admin/recent-deaths",
+            post(routes::ingest_recent_deaths).layer(DefaultBodyLimit::max(1024 * 1024)),
+        )
         .route("/api/people/today", get(routes::today))
         .route("/api/people/week", get(routes::week))
         .route("/api/people/recent", get(routes::recent))
