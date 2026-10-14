@@ -18,7 +18,7 @@ use uuid::Uuid;
 
 use crate::{
     error::AppError,
-    models::{Media, PendingPerson, Person, PersonDetail},
+    models::{Media, PendingPerson, Person, PersonDetail, RecentDeathHistoryItem},
     translate::{self, TranslateRequest, TranslateResponse},
     AppState,
 };
@@ -1155,6 +1155,59 @@ pub async fn pending_people(
     .fetch_all(&s.db)
     .await?;
     Ok(Json(pending))
+}
+
+#[derive(Deserialize)]
+pub struct RecentDeathHistoryQuery {
+    status: Option<String>,
+    q: Option<String>,
+    limit: Option<i64>,
+    offset: Option<i64>,
+}
+
+pub async fn recent_death_history(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+    Query(q): Query<RecentDeathHistoryQuery>,
+) -> Result<Json<Value>, AppError> {
+    require_admin(&headers, &s, false).await?;
+    let status = q.status.as_deref().filter(|status| !status.is_empty());
+    if status.is_some_and(|value| !matches!(value, "pending" | "approved" | "rejected")) {
+        return Err(AppError::BadRequest("invalid review status".into()));
+    }
+    let limit = q.limit.unwrap_or(25).clamp(1, 100);
+    let offset = q.offset.unwrap_or(0).max(0);
+    let pattern = q
+        .q
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| format!("%{}%", value.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_")));
+    let total: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM pending_people
+         WHERE ($1::text IS NULL OR status = $1)
+           AND ($2::text IS NULL OR name ILIKE $2)",
+    )
+    .bind(status)
+    .bind(&pattern)
+    .fetch_one(&s.db)
+    .await?;
+    let items = sqlx::query_as::<_, RecentDeathHistoryItem>(
+        "SELECT id, wikidata_id, name, death_date, wikidata_url, wikipedia_url,
+                status, created_at, reviewed_at
+         FROM pending_people
+         WHERE ($1::text IS NULL OR status = $1)
+           AND ($2::text IS NULL OR name ILIKE $2)
+         ORDER BY created_at DESC, name
+         LIMIT $3 OFFSET $4",
+    )
+    .bind(status)
+    .bind(&pattern)
+    .bind(limit)
+    .bind(offset)
+    .fetch_all(&s.db)
+    .await?;
+    Ok(Json(json!({ "items": items, "total": total, "limit": limit, "offset": offset })))
 }
 
 pub async fn update_pending_person(

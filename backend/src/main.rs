@@ -91,6 +91,10 @@ async fn main() -> anyhow::Result<()> {
             patch(routes::admin_update_person).delete(routes::admin_delete_person),
         )
         .route("/api/admin/pending-people", get(routes::pending_people))
+        .route(
+            "/api/admin/recent-deaths/history",
+            get(routes::recent_death_history),
+        )
         .route("/api/admin/pending-people/:id", patch(routes::update_pending_person))
         .route(
             "/api/admin/pending-people/:id/approve",

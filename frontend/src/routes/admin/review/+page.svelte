@@ -91,6 +91,7 @@
 
 <div class="toolbar">
   <a href="/admin">← All people</a>
+  <a href="/admin/review/history">Cron import history</a>
   <button
     type="button"
     onclick={() => loadPeople().catch((err) => { error = err.message; })}

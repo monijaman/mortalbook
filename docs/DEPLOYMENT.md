@@ -238,6 +238,8 @@ To enable it:
 3. Open `/admin/review` over HTTPS and enter the server's `ADMIN_REVIEW_TOKEN`. Review each
    candidate's sources and details, edit its story, and approve or reject it. Approval is the
    only operation that copies a candidate into the public `people` catalog.
+4. View the permanent import history at `/admin/review/history` to see cron-submitted candidates,
+   when they were imported, and whether they are pending, approved, or rejected.
 
 ## Operations
 

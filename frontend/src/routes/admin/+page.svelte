@@ -64,6 +64,7 @@
 <div class="toolbar">
   <a class="button" href="/admin/new">+ Add a person</a>
   <a href="/admin/review">Review recent-death candidates</a>
+  <a href="/admin/review/history">Cron import history</a>
   <button type="button" class="secondary" onclick={logout}>Sign out</button>
 </div>
 
