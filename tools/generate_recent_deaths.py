@@ -6,13 +6,17 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
+from urllib.error import URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 ENDPOINT = "https://query.wikidata.org/sparql"
 USER_AGENT = "MortalbookRecentDeathsBot/1.0 (GitHub Actions)"
+SPARQL_TIMEOUT_SECONDS = 120
+SPARQL_ATTEMPTS = 3
 
 OCCUPATIONS = (
     "Q33999",       # actor
@@ -159,9 +163,20 @@ def fetch_candidates(now: datetime | None = None) -> list[dict[str, Any]]:
         f"{ENDPOINT}?{urlencode({'query': build_query(now), 'format': 'json'})}",
         headers={"Accept": "application/sparql-results+json", "User-Agent": USER_AGENT},
     )
-    with urlopen(request, timeout=45) as response:
-        result = json.load(response)
-    return parse_candidates(result["results"]["bindings"], now)
+    last_error: Exception | None = None
+    for attempt in range(SPARQL_ATTEMPTS):
+        try:
+            with urlopen(request, timeout=SPARQL_TIMEOUT_SECONDS) as response:
+                result = json.load(response)
+            return parse_candidates(result["results"]["bindings"], now)
+        except (TimeoutError, URLError) as error:
+            last_error = error
+            if attempt == SPARQL_ATTEMPTS - 1:
+                break
+            time.sleep(2**attempt)
+    raise RuntimeError(
+        f"Wikidata SPARQL request failed after {SPARQL_ATTEMPTS} attempts"
+    ) from last_error
 
 
 def submit_candidates(
