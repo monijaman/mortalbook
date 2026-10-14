@@ -230,7 +230,8 @@ from Wikidata and submits them to the private review queue; it never publishes c
 To enable it:
 
 1. Set the server `.env` values `ADMIN_REVIEW_TOKEN` and `RECENT_DEATHS_INGEST_TOKEN` to separate
-   random secrets and restart the backend with `docker compose up -d --build`.
+   random secrets. Docker Compose passes both values to the backend; restart it with
+   `docker compose up -d --build`.
 2. Add a GitHub Actions repository secret named `RECENT_DEATHS_INGEST_TOKEN` with the same value
    as the server's ingest token. Optionally set the Actions variable `MORTALBOOK_API_URL` if using
    a non-production API URL; it defaults to `https://mortalbook.com`.

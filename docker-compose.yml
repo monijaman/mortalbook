@@ -28,6 +28,8 @@ services:
       DATABASE_URL: postgres://mortalbook:${POSTGRES_PASSWORD:-mortalbook}@db:5432/mortalbook
       TRANSLATE_URL: http://translate:5000
       UPLOAD_DIR: /data/uploads
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
       ADMIN_REVIEW_TOKEN: ${ADMIN_REVIEW_TOKEN:-}
       RECENT_DEATHS_INGEST_TOKEN: ${RECENT_DEATHS_INGEST_TOKEN:-}
     volumes:
