@@ -1,13 +1,14 @@
 mod error;
 mod models;
 mod routes;
+mod story;
 mod translate;
 
 use std::{env, path::PathBuf};
 
 use axum::{
     extract::DefaultBodyLimit,
-    routing::{get, post},
+    routing::{get, patch, post},
     Router,
 };
 use sqlx::postgres::PgPoolOptions;
@@ -23,6 +24,8 @@ pub struct AppState {
     pub admin_username: Option<String>,
     pub admin_password: Option<String>,
     pub admin_review_token: Option<String>,
+    pub openai_api_key: Option<String>,
+    pub openai_model: String,
     pub recent_deaths_ingest_token: Option<String>,
 }
 
@@ -59,6 +62,11 @@ async fn main() -> anyhow::Result<()> {
         admin_password: env::var("ADMIN_PASSWORD")
             .ok()
             .filter(|value| !value.is_empty()),
+        openai_api_key: env::var("OPENAI_API_KEY").ok().filter(|value| !value.is_empty()),
+        openai_model: env::var("OPENAI_MODEL")
+            .ok()
+            .filter(|value| !value.is_empty())
+            .unwrap_or_else(|| "gpt-4.1".into()),
         admin_review_token: env::var("ADMIN_REVIEW_TOKEN")
             .ok()
             .filter(|value| !value.is_empty()),
@@ -69,11 +77,21 @@ async fn main() -> anyhow::Result<()> {
 
     let app = Router::new()
         .route("/api/health", get(routes::health))
-        .route("/api/people", get(routes::list).post(routes::create))
+        .route("/api/people", get(routes::list))
         .route("/api/admin/login", post(routes::admin_login))
         .route("/api/admin/logout", post(routes::admin_logout))
+        .route("/api/admin/me", get(routes::admin_me))
+        .route("/api/admin/generate-story", post(story::generate_story))
+        .route(
+            "/api/admin/people",
+            get(routes::admin_list_people).post(routes::create),
+        )
+        .route(
+            "/api/admin/people/:id",
+            patch(routes::admin_update_person).delete(routes::admin_delete_person),
+        )
         .route("/api/admin/pending-people", get(routes::pending_people))
-        .route("/api/admin/pending-people/:id", axum::routing::patch(routes::update_pending_person))
+        .route("/api/admin/pending-people/:id", patch(routes::update_pending_person))
         .route(
             "/api/admin/pending-people/:id/approve",
             post(routes::approve_pending_person),

@@ -1,8 +1,8 @@
-CREATE TABLE admin_sessions (
-    id UUID PRIMARY KEY,
+CREATE TABLE IF NOT EXISTS admin_sessions (
+    id           UUID PRIMARY KEY,
     session_hash TEXT NOT NULL UNIQUE,
-    expires_at TIMESTAMPTZ NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    expires_at   TIMESTAMPTZ NOT NULL
 );
 
-CREATE INDEX admin_sessions_expiry_idx ON admin_sessions (expires_at);
+CREATE INDEX IF NOT EXISTS admin_sessions_expires_idx ON admin_sessions (expires_at);

@@ -1,3 +1,4 @@
+import { plainText } from '$lib/markdown.js';
 export const SITE_URL = 'https://mortalbook.com';
 export const DEFAULT_DESCRIPTION =
   'Mortalbook is a place to remember people who have passed away. Discover their lives, stories, and anniversaries.';
@@ -8,7 +9,7 @@ export function canonicalUrl(path) {
 }
 
 export function personDescription(person) {
-  const bio = (person.bio || '').replace(/\s+/g, ' ').trim();
+  const bio = plainText(person.bio || '').replace(/\s+/g, ' ').trim();
   if (bio) return bio.length > 300 ? `${bio.slice(0, 297).trimEnd()}...` : bio;
 
   const dates = [person.birth_date, person.death_date].filter(Boolean);

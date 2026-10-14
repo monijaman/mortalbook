@@ -1,6 +1,7 @@
 <script>
   import T from '$lib/T.svelte';
   import { years, yearLabel } from '$lib/format.js';
+  import { plainText } from '$lib/markdown.js';
 
   let { person, showAgo = false, days = undefined } = $props();
   // "Tomorrow", "In 3 days", "Yesterday", "3 days ago" (whole phrase is translated)
@@ -9,9 +10,10 @@
     days === 1 ? 'Tomorrow' : days === -1 ? 'Yesterday' :
     days > 0 ? `In ${days} days` : `${-days} days ago`
   );
-  const excerpt = $derived(
-    person.bio.length > 160 ? person.bio.slice(0, 160).trimEnd() + '…' : person.bio
-  );
+  const excerpt = $derived.by(() => {
+    const text = plainText(person.bio);
+    return text.length > 160 ? text.slice(0, 160).trimEnd() + '…' : text;
+  });
   const ago = $derived(showAgo ? years(person.death_date) : 0);
 </script>
 

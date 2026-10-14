@@ -1,10 +1,24 @@
 <script>
+  import { onMount } from 'svelte';
   import T from '$lib/T.svelte';
+  import Story from '$lib/Story.svelte';
+  import { plainText } from '$lib/markdown.js';
   import { lang } from '$lib/i18n.js';
   import { dateLabel, ageAt, embedUrl } from '$lib/format.js';
   import { canonicalUrl, DEFAULT_IMAGE, jsonLd, personDescription } from '$lib/seo.js';
 
   let { data } = $props();
+  let isAdmin = $state(false);
+
+  // Only visitors who signed in on this browser ever ask the server, so normal traffic is unaffected.
+  onMount(async () => {
+    try {
+      if (!localStorage.getItem('mortalbook-admin')) return;
+      const res = await fetch('/api/admin/me');
+      isAdmin = res.ok;
+      if (res.status === 401) localStorage.removeItem('mortalbook-admin');
+    } catch {}
+  });
   const p = $derived(data.person);
   const images = $derived(p.media.filter((m) => m.kind === 'image'));
   const videos = $derived(p.media.filter((m) => m.kind === 'video'));
@@ -13,7 +27,7 @@
   const age = $derived(
     p.birth_date && exact(p.birth_precision) && exact(p.death_precision) ? ageAt(p.birth_date, p.death_date) : null
   );
-  const paragraphs = $derived(p.bio.split(/\n{2,}/).filter((s) => s.trim()));
+  const hasStory = $derived(p.bio.trim().length > 0);
   const description = $derived(personDescription(p));
   const url = $derived(canonicalUrl(`/people/${p.id}`));
   const structuredData = $derived({
@@ -47,6 +61,9 @@
 </svelte:head>
 
 <a class="back" href="/people">← <T text="Remembered" /></a>
+{#if isAdmin}
+  <a class="edit" href={`/admin/people/${p.id}`}>✎ Edit this person</a>
+{/if}
 
 <article>
   <div class="head">
@@ -72,11 +89,9 @@
     </dl>
   {/if}
 
-  {#if paragraphs.length}
+  {#if hasStory}
     <section class="bio">
-      {#each paragraphs as para}
-        <p><T text={para} from={p.lang || 'auto'} /></p>
-      {/each}
+      <Story bio={p.bio} from={p.lang || 'auto'} />
     </section>
   {/if}
 
@@ -107,6 +122,7 @@
 </article>
 
 <style>
+  .edit { float: right; font-size: 0.95rem; }
   .back { color: var(--muted); text-decoration: none; }
   .head { display: flex; flex-wrap: wrap; gap: 2rem; align-items: center; margin: 1.5rem 0 2rem; }
   .portrait {

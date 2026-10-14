@@ -12,7 +12,8 @@ A place to remember people who have passed away. Rust (axum + sqlx) API, SvelteK
   detected source language when submitted. Translations are cached in Postgres.
 - **Recent-death review** (`/admin/review`) – scheduled public-figure candidates are held privately
   until an authenticated admin verifies, edits, and approves them.
-- **Add a person** (`/admin`) – open to anyone for now (no login).
+- **Admin** (`/admin/login`) – sign in to list, search, add, edit (rich text story editor) and delete
+  people, review recent-death candidates, and generate a story with OpenAI + web search.
 
 ## Run everything
 
@@ -34,6 +35,45 @@ cd frontend && npm install && npm run dev      # http://localhost:3000
 
 Layout: `backend/` (API, migrations in `backend/migrations`), `frontend/` (SvelteKit; `src/hooks.server.js`
 proxies `/api` and `/uploads` to the backend).
+
+## Configuration (`.env`)
+
+Settings live in a `.env` file next to `docker-compose.yml` (on the server: `/var/www/mortalbook/.env`).
+It is never committed and never overwritten by a deploy. Start from [.env.example](.env.example).
+
+| Variable | Purpose |
+| --- | --- |
+| `POSTGRES_PASSWORD` | Database password. Do not change after the first start. |
+| `ADMIN_USERNAME` / `ADMIN_PASSWORD` | Admin login. The password must be at least 16 characters. |
+| `ADMIN_REVIEW_TOKEN` | Token for the recent-death review API. |
+| `RECENT_DEATHS_INGEST_TOKEN` | Token used by the scheduled recent-deaths job. |
+| `OPENAI_API_KEY` | Enables **Generate story** in the editor. Optional. |
+| `OPENAI_MODEL` | OpenAI model with web search (default `gpt-4.1`). Optional. |
+
+View or change it on the server:
+
+```bash
+cd /var/www/mortalbook
+grep -v -E 'PASSWORD|TOKEN|KEY' .env      # safe view: hides secrets
+grep -c . .env && cut -d= -f1 .env        # list the variable names only
+nano .env                                 # edit (Ctrl+O save, Ctrl+X exit)
+```
+
+Set or replace one value without opening an editor:
+
+```bash
+sed -i '/^OPENAI_API_KEY=/d' .env
+echo 'OPENAI_API_KEY=sk-your-key' >> .env
+```
+
+Changes only apply after the backend is recreated (a plain restart does not reload `.env`):
+
+```bash
+docker compose up -d --force-recreate backend
+docker compose exec backend sh -c 'echo "user=[$ADMIN_USERNAME] pwlen=${#ADMIN_PASSWORD} openai=${OPENAI_API_KEY:+set}"'
+```
+
+Avoid `$`, quotes and spaces in values. Never paste secrets into chats or commit them.
 
 ## Deploy
 
