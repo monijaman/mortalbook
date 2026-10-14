@@ -915,6 +915,15 @@ pub async fn ingest_recent_deaths(
     let mut inserted = 0_u64;
     let mut tx = s.db.begin().await?;
     for candidate in candidates {
+        let draft = crate::story::generate_import_story(
+            &s,
+            &candidate.name,
+            candidate.birth_date,
+            candidate.death_date,
+            candidate.occupation.as_deref(),
+            candidate.birth_place.as_deref(),
+            candidate.death_place.as_deref(),
+        ).await?;
         let public_duplicate: bool = sqlx::query_scalar(
             "SELECT EXISTS (
                 SELECT 1 FROM people
@@ -944,23 +953,21 @@ pub async fn ingest_recent_deaths(
             continue;
         }
         let wikidata_url = format!("https://www.wikidata.org/wiki/{}", candidate.wikidata_id);
-        let bio = format!(
-            "Review required: verify this candidate's death and biography before approval.\n\nWikidata: {wikidata_url}\nEnglish Wikipedia: {}",
-            candidate.wikipedia_url
-        );
+        let bio = format!("{draft}\n\nSources to verify:\n- Wikidata: {wikidata_url}\n- English Wikipedia: {}", candidate.wikipedia_url);
+        let import_id = Uuid::new_v4();
         let result = sqlx::query(
             "INSERT INTO pending_people (
                 id, wikidata_id, name, birth_date, death_date, bio, occupation,
-                birth_place, death_place, wikidata_url, wikipedia_url
-             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                birth_place, death_place, wikidata_url, wikipedia_url, status, reviewed_at
+             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'approved', now())
              ON CONFLICT (wikidata_id) DO NOTHING",
         )
-        .bind(Uuid::new_v4())
+        .bind(import_id)
         .bind(&candidate.wikidata_id)
         .bind(&candidate.name)
         .bind(candidate.birth_date)
         .bind(candidate.death_date)
-        .bind(bio)
+        .bind(&bio)
         .bind(candidate.occupation)
         .bind(candidate.birth_place)
         .bind(candidate.death_place)
@@ -968,6 +975,25 @@ pub async fn ingest_recent_deaths(
         .bind(candidate.wikipedia_url)
         .execute(&mut *tx)
         .await?;
+        if result.rows_affected() > 0 {
+            sqlx::query(
+                "INSERT INTO people (
+                    id, name, birth_date, death_date, bio, lang, occupation, birth_place, death_place,
+                    birth_precision, death_precision
+                 ) VALUES ($1, $2, $3, $4, $5, 'en', $6, $7, $8,
+                    CASE WHEN $3 IS NULL THEN 'year' ELSE 'day' END, 'day')",
+            )
+            .bind(Uuid::new_v4())
+            .bind(&candidate.name)
+            .bind(candidate.birth_date)
+            .bind(candidate.death_date)
+            .bind(&bio)
+            .bind(&candidate.occupation)
+            .bind(&candidate.birth_place)
+            .bind(&candidate.death_place)
+            .execute(&mut *tx)
+            .await?;
+        }
         inserted += result.rows_affected();
     }
     tx.commit().await?;

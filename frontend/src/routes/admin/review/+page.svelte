@@ -150,8 +150,9 @@
 {#if editingId}
   {@const person = people.find((item) => item.id === editingId)}
   {#if person}
-    <article class="candidate">
-      <div class="candidate-header"><h2>{person.name}</h2><button type="button" class="secondary" onclick={() => editingId = ''}>Close</button></div>
+    <div class="modal-backdrop" role="presentation" onclick={(event) => { if (event.target === event.currentTarget) editingId = ''; }}>
+      <div class="candidate modal" role="dialog" aria-modal="true" aria-labelledby="edit-title">
+      <div class="candidate-header"><h2 id="edit-title">Edit {person.name}</h2><button type="button" class="secondary" onclick={() => editingId = ''}>Close</button></div>
       <p class="sources">
         <a href={person.wikidata_url} target="_blank" rel="noopener noreferrer">Wikidata record</a>
         ·
@@ -205,7 +206,8 @@
           >Reject</button>
         </div>
       </form>
-    </article>
+      </div>
+    </div>
   {/if}
 {/if}
 
@@ -224,6 +226,8 @@
   th, td { text-align: left; padding: 0.7rem 0.6rem; border-bottom: 1px solid var(--line); }
   th { color: var(--muted); font-weight: 500; }
   .candidate { border: 1px solid var(--line); border-radius: 10px; padding: 1.25rem; }
+  .modal-backdrop { position: fixed; inset: 0; z-index: 10; display: grid; place-items: center; padding: 1rem; background: rgb(0 0 0 / 0.65); }
+  .modal { width: min(760px, 100%); max-height: calc(100vh - 2rem); overflow-y: auto; background: var(--surface); box-shadow: 0 1rem 3rem rgb(0 0 0 / 0.35); }
   .candidate h2 { margin: 0; }
   .candidate-header { display: flex; justify-content: space-between; gap: 1rem; align-items: center; }
   .sources { margin: 0.5rem 0 1rem; }

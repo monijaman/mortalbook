@@ -43,6 +43,56 @@ fn clean(value: &Option<String>, max: usize) -> Option<String> {
         .map(|v| v.chars().take(max).collect())
 }
 
+/// Generate an initial private draft for a candidate imported from Wikidata.
+pub async fn generate_import_story(
+    s: &AppState,
+    name: &str,
+    birth_date: Option<NaiveDate>,
+    death_date: NaiveDate,
+    occupation: Option<&str>,
+    birth_place: Option<&str>,
+    death_place: Option<&str>,
+) -> Result<String, AppError> {
+    let Some(api_key) = s.openai_api_key.as_deref() else {
+        return Err(AppError::ServiceUnavailable(
+            "recent-death imports require OPENAI_API_KEY".into(),
+        ));
+    };
+    let facts = format!(
+        "Name: {name}\nBorn: {}\nDied: {death_date}\nOccupation: {}\nBirth place: {}\nDeath place: {}",
+        birth_date.map(|value| value.to_string()).unwrap_or_else(|| "unknown".into()),
+        occupation.unwrap_or("unknown"),
+        birth_place.unwrap_or("unknown"),
+        death_place.unwrap_or("unknown"),
+    );
+    let response = s.http.post("https://api.openai.com/v1/responses")
+        .bearer_auth(api_key)
+        .timeout(Duration::from_secs(240))
+        .json(&json!({
+            "model": s.openai_model,
+            "instructions": INSTRUCTIONS,
+            "input": format!("Create an initial draft using these verified identity details. Do not invent missing facts.\n\n{facts}"),
+            "tools": [{ "type": "web_search" }],
+            "tool_choice": "auto"
+        }))
+        .send().await
+        .map_err(|e| AppError::Upstream(format!("could not reach OpenAI: {e}")))?;
+    let status = response.status();
+    let body: Value = response.json().await
+        .map_err(|e| AppError::Upstream(format!("unreadable OpenAI response: {e}")))?;
+    if !status.is_success() {
+        let message = body["error"]["message"].as_str().unwrap_or("request failed");
+        return Err(AppError::Upstream(format!("OpenAI error: {message}")));
+    }
+    let story = body["output"].as_array().into_iter().flatten()
+        .filter(|item| item["type"] == "message")
+        .flat_map(|item| item["content"].as_array().into_iter().flatten())
+        .filter(|part| part["type"] == "output_text")
+        .filter_map(|part| part["text"].as_str())
+        .collect::<String>().trim().to_string();
+    if story.is_empty() { Err(AppError::Upstream("OpenAI returned no story".into())) } else { Ok(story) }
+}
+
 pub async fn generate_story(
     State(s): State<AppState>,
     headers: HeaderMap,
