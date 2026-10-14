@@ -974,6 +974,35 @@ pub async fn ingest_recent_deaths(
     Ok(Json(json!({ "queued": inserted })))
 }
 
+pub async fn run_recent_deaths(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Value>, AppError> {
+    require_admin(&headers, &s, true).await?;
+    let token = s.github_actions_token.as_deref().ok_or_else(|| {
+        AppError::ServiceUnavailable("manual cron runs are not configured".into())
+    })?;
+    let response = s
+        .http
+        .post("https://api.github.com/repos/monijaman/mortalbook/actions/workflows/recent-deaths.yml/dispatches")
+        .header("Accept", "application/vnd.github+json")
+        .header("Authorization", format!("Bearer {token}"))
+        .header("X-GitHub-Api-Version", "2022-11-28")
+        .header("User-Agent", "MortalbookAdmin")
+        .json(&json!({ "ref": "main" }))
+        .send()
+        .await
+        .map_err(|error| AppError::ServiceUnavailable(format!("GitHub dispatch failed: {error}")))?;
+    if !response.status().is_success() {
+        let status = response.status();
+        let detail = response.text().await.unwrap_or_default();
+        return Err(AppError::ServiceUnavailable(format!(
+            "GitHub dispatch failed ({status}): {detail}"
+        )));
+    }
+    Ok(Json(json!({ "started": true })))
+}
+
 pub async fn admin_me(
     State(s): State<AppState>,
     headers: HeaderMap,

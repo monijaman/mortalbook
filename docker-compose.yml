@@ -34,6 +34,7 @@ services:
       OPENAI_MODEL: ${OPENAI_MODEL:-}
       ADMIN_REVIEW_TOKEN: ${ADMIN_REVIEW_TOKEN:-}
       RECENT_DEATHS_INGEST_TOKEN: ${RECENT_DEATHS_INGEST_TOKEN:-}
+      GITHUB_ACTIONS_TOKEN: ${GITHUB_ACTIONS_TOKEN:-}
     volumes:
       - uploads:/data/uploads
     depends_on:

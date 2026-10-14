@@ -10,8 +10,22 @@
   let status = $state('');
   let error = $state('');
   let loading = $state(false);
+  let runningCron = $state(false);
 
   onMount(() => load());
+
+  async function runCron() {
+    runningCron = true;
+    error = '';
+    try {
+      await adminApi('/api/admin/recent-deaths/run', { method: 'POST' });
+      await load();
+    } catch (err) {
+      error = err.message;
+    } finally {
+      runningCron = false;
+    }
+  }
 
   async function load() {
     loading = true;
@@ -55,7 +69,7 @@
 <div class="toolbar">
   <a href="/admin">← All people</a>
   <a href="/admin/review">Review pending candidates</a>
-  <a class="button" href="https://github.com/monijaman/mortalbook/actions/workflows/recent-deaths.yml" target="_blank" rel="noopener noreferrer">Run cron once</a>
+  <button type="button" class="button" onclick={runCron} disabled={runningCron}>{runningCron ? 'Starting…' : 'Run cron once'}</button>
   <button type="button" class="secondary" onclick={logout}>Sign out</button>
 </div>
 

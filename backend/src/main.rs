@@ -27,6 +27,7 @@ pub struct AppState {
     pub openai_api_key: Option<String>,
     pub openai_model: String,
     pub recent_deaths_ingest_token: Option<String>,
+    pub github_actions_token: Option<String>,
 }
 
 const MAX_UPLOAD_BYTES: usize = 300 * 1024 * 1024;
@@ -73,6 +74,9 @@ async fn main() -> anyhow::Result<()> {
         recent_deaths_ingest_token: env::var("RECENT_DEATHS_INGEST_TOKEN")
             .ok()
             .filter(|value| !value.is_empty()),
+        github_actions_token: env::var("GITHUB_ACTIONS_TOKEN")
+            .ok()
+            .filter(|value| !value.is_empty()),
     };
 
     let app = Router::new()
@@ -94,6 +98,10 @@ async fn main() -> anyhow::Result<()> {
         .route(
             "/api/admin/recent-deaths/history",
             get(routes::recent_death_history),
+        )
+        .route(
+            "/api/admin/recent-deaths/run",
+            post(routes::run_recent_deaths),
         )
         .route("/api/admin/pending-people/:id", patch(routes::update_pending_person))
         .route(
