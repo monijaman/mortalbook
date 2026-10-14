@@ -12,8 +12,10 @@
   let page = $state(0);
   const pageSize = 10;
   let editingId = $state('');
+  let selectedIds = $state(new Set());
   let pagePeople = $derived(people.slice(page * pageSize, (page + 1) * pageSize));
   let pageCount = $derived(Math.max(1, Math.ceil(people.length / pageSize)));
+  let allSelected = $derived(pagePeople.length > 0 && pagePeople.every((person) => selectedIds.has(person.id)));
 
   onMount(() => {
     loadPeople().catch((err) => { error = err.message; });
@@ -99,6 +101,32 @@
     }
   }
 
+  function toggleSelected(id) {
+    const next = new Set(selectedIds);
+    next.has(id) ? next.delete(id) : next.add(id);
+    selectedIds = next;
+  }
+
+  function toggleAll() {
+    const next = new Set(selectedIds);
+    if (allSelected) pagePeople.forEach((person) => next.delete(person.id));
+    else pagePeople.forEach((person) => next.add(person.id));
+    selectedIds = next;
+  }
+
+  async function makeActive() {
+    if (!selectedIds.size || !confirm(`Make ${selectedIds.size} selected candidate(s) active?`)) return;
+    error = '';
+    try {
+      const result = await adminApi('/api/admin/pending-people/bulk-approve', {
+        method: 'POST', body: JSON.stringify({ ids: [...selectedIds] })
+      });
+      people = people.filter((person) => !selectedIds.has(person.id));
+      selectedIds = new Set();
+      notice = `${result.published} candidate(s) are now active and public.`;
+    } catch (err) { error = err.message; }
+  }
+
 </script>
 
 <svelte:head>
@@ -132,11 +160,13 @@
 {/if}
 
 <section class="list" aria-label="Pending recent-death candidates">
+  {#if selectedIds.size}<div class="bulk-actions"><span>{selectedIds.size} selected</span><button type="button" class="approve" onclick={makeActive}>Make active</button></div>{/if}
   <table>
-    <thead><tr><th>Name</th><th>Date of passing</th><th>Occupation</th><th></th></tr></thead>
+    <thead><tr><th><input type="checkbox" aria-label="Select all on this page" checked={allSelected} onchange={toggleAll} /></th><th>Name</th><th>Date of passing</th><th>Occupation</th><th></th></tr></thead>
     <tbody>
     {#each pagePeople as person (person.id)}
       <tr>
+        <td><input type="checkbox" aria-label={`Select ${person.name}`} checked={selectedIds.has(person.id)} onchange={() => toggleSelected(person.id)} /></td>
         <td>{person.name}</td>
         <td>{person.death_date}</td>
         <td>{person.occupation || '—'}</td>
@@ -222,6 +252,7 @@
 <style>
   .editor { display: grid; gap: 1rem; }
   .list { overflow-x: auto; margin-top: 1.5rem; }
+  .bulk-actions { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; }
   table { width: 100%; border-collapse: collapse; }
   th, td { text-align: left; padding: 0.7rem 0.6rem; border-bottom: 1px solid var(--line); }
   th { color: var(--muted); font-weight: 500; }

@@ -1295,6 +1295,43 @@ pub async fn update_pending_person(
     Ok(Json(json!({ "updated": true })))
 }
 
+#[derive(Deserialize)]
+pub struct BulkPendingPeople { ids: Vec<Uuid> }
+
+pub async fn bulk_approve_pending_people(
+    State(s): State<AppState>, headers: HeaderMap, Json(request): Json<BulkPendingPeople>,
+) -> Result<Json<Value>, AppError> {
+    require_admin(&headers, &s, true).await?;
+    if request.ids.is_empty() || request.ids.len() > 200 {
+        return Err(AppError::BadRequest("select between 1 and 200 candidates".into()));
+    }
+    let mut tx = s.db.begin().await?;
+    let mut published = 0_u64;
+    for id in request.ids {
+        let pending = sqlx::query_as::<_, PendingPerson>(
+            "SELECT id, wikidata_id, name, birth_date, death_date, bio, occupation,
+                    birth_place, death_place, wikidata_url, wikipedia_url, created_at, updated_at
+             FROM pending_people WHERE id = $1 AND status = 'pending' FOR UPDATE",
+        ).bind(id).fetch_optional(&mut *tx).await?;
+        let Some(pending) = pending else { continue };
+        if pending.bio.starts_with("Review required:") {
+            return Err(AppError::BadRequest(format!("edit {} before making it active", pending.name)));
+        }
+        let result = sqlx::query(
+            "INSERT INTO people (id, name, birth_date, death_date, bio, lang, occupation, birth_place, death_place, birth_precision, death_precision)
+             SELECT $1, $2, $3, $4, $5, 'en', $6, $7, $8, CASE WHEN $3 IS NULL THEN 'year' ELSE 'day' END, 'day'
+             WHERE NOT EXISTS (SELECT 1 FROM people WHERE lower(name) = lower($2) AND death_date = $4)",
+        ).bind(Uuid::new_v4()).bind(&pending.name).bind(pending.birth_date)
+         .bind(pending.death_date).bind(&pending.bio).bind(&pending.occupation)
+         .bind(&pending.birth_place).bind(&pending.death_place).execute(&mut *tx).await?;
+        if result.rows_affected() > 0 { published += 1; }
+        sqlx::query("UPDATE pending_people SET status = 'approved', reviewed_at = now(), updated_at = now() WHERE id = $1")
+            .bind(id).execute(&mut *tx).await?;
+    }
+    tx.commit().await?;
+    Ok(Json(json!({ "published": published })))
+}
+
 pub async fn approve_pending_person(
     State(s): State<AppState>,
     headers: HeaderMap,

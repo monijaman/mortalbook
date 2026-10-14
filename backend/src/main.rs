@@ -104,6 +104,7 @@ async fn main() -> anyhow::Result<()> {
             post(routes::run_recent_deaths),
         )
         .route("/api/admin/pending-people/:id", patch(routes::update_pending_person))
+        .route("/api/admin/pending-people/bulk-approve", post(routes::bulk_approve_pending_people))
         .route(
             "/api/admin/pending-people/:id/approve",
             post(routes::approve_pending_person),
