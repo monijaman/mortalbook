@@ -92,6 +92,7 @@
 <div class="toolbar">
   <a href="/admin">← All people</a>
   <a href="/admin/review/history">Cron import history</a>
+  <a class="button" href="https://github.com/monijaman/mortalbook/actions/workflows/recent-deaths.yml" target="_blank" rel="noopener noreferrer">Run cron once</a>
   <button
     type="button"
     onclick={() => loadPeople().catch((err) => { error = err.message; })}
@@ -181,6 +182,7 @@
   .toolbar { margin: 1.2rem 0; }
   .actions { padding-top: 0.2rem; }
   .secondary { background: transparent; color: var(--text); }
+  .button { background: var(--accent); color: #fff; padding: 0.45rem 0.9rem; border-radius: 6px; text-decoration: none; }
   .approve { background: var(--accent); }
   .reject { background: var(--danger); }
   .error { color: var(--danger); }

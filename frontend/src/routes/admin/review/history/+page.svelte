@@ -55,6 +55,7 @@
 <div class="toolbar">
   <a href="/admin">← All people</a>
   <a href="/admin/review">Review pending candidates</a>
+  <a class="button" href="https://github.com/monijaman/mortalbook/actions/workflows/recent-deaths.yml" target="_blank" rel="noopener noreferrer">Run cron once</a>
   <button type="button" class="secondary" onclick={logout}>Sign out</button>
 </div>
 
@@ -115,6 +116,7 @@
   th, td { text-align: left; padding: 0.5rem 0.6rem; border-bottom: 1px solid var(--line); }
   .sources { white-space: nowrap; }
   .secondary { background: transparent; color: var(--text); }
+  .button { background: var(--accent); color: #fff; padding: 0.45rem 0.9rem; border-radius: 6px; text-decoration: none; }
   .error { color: var(--danger); }
   @media (max-width: 640px) {
     table { font-size: 0.9rem; }
