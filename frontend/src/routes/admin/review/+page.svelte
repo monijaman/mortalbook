@@ -9,6 +9,11 @@
   let busyId = $state('');
   let loading = $state(false);
   let runningCron = $state(false);
+  let page = $state(0);
+  const pageSize = 10;
+  let editingId = $state('');
+  let pagePeople = $derived(people.slice(page * pageSize, (page + 1) * pageSize));
+  let pageCount = $derived(Math.max(1, Math.ceil(people.length / pageSize)));
 
   onMount(() => {
     loadPeople().catch((err) => { error = err.message; });
@@ -19,6 +24,7 @@
     error = '';
     try {
       people = await adminApi('/api/admin/pending-people');
+      page = Math.min(page, Math.max(0, Math.ceil(people.length / pageSize) - 1));
     } finally {
       loading = false;
     }
@@ -81,6 +87,8 @@
       }
       await adminApi(`/api/admin/pending-people/${person.id}/${decision}`, { method: 'POST' });
       people = people.filter((item) => item.id !== person.id);
+      editingId = '';
+      page = Math.min(page, Math.max(0, Math.ceil(people.length / pageSize) - 1));
       notice = decision === 'approve'
         ? `${person.name} was approved and added to the public catalog.`
         : `${person.name} was rejected.`;
@@ -123,10 +131,27 @@
   <p class="muted">There are no recent-death candidates waiting for review.</p>
 {/if}
 
-<section class="queue" aria-label="Pending recent-death candidates">
-  {#each people as person (person.id)}
+<section class="list" aria-label="Pending recent-death candidates">
+  <table>
+    <thead><tr><th>Name</th><th>Date of passing</th><th>Occupation</th><th></th></tr></thead>
+    <tbody>
+    {#each pagePeople as person (person.id)}
+      <tr>
+        <td>{person.name}</td>
+        <td>{person.death_date}</td>
+        <td>{person.occupation || '—'}</td>
+        <td><button type="button" onclick={() => editingId = person.id}>Edit</button></td>
+      </tr>
+    {/each}
+    </tbody>
+  </table>
+</section>
+
+{#if editingId}
+  {@const person = people.find((item) => item.id === editingId)}
+  {#if person}
     <article class="candidate">
-      <h2>{person.name}</h2>
+      <div class="candidate-header"><h2>{person.name}</h2><button type="button" class="secondary" onclick={() => editingId = ''}>Close</button></div>
       <p class="sources">
         <a href={person.wikidata_url} target="_blank" rel="noopener noreferrer">Wikidata record</a>
         ·
@@ -181,19 +206,31 @@
         </div>
       </form>
     </article>
-  {/each}
-</section>
+  {/if}
+{/if}
+
+{#if people.length > 0}
+  <div class="pagination" aria-label="Review queue pagination">
+    <button type="button" onclick={() => page -= 1} disabled={page === 0}>← Previous</button>
+    <span class="muted">Page {page + 1} of {pageCount}</span>
+    <button type="button" onclick={() => page += 1} disabled={page + 1 >= pageCount}>Next →</button>
+  </div>
+{/if}
 
 <style>
   .editor { display: grid; gap: 1rem; }
-  .queue { display: grid; gap: 1.5rem; margin-top: 1.5rem; }
+  .list { overflow-x: auto; margin-top: 1.5rem; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 0.7rem 0.6rem; border-bottom: 1px solid var(--line); }
+  th { color: var(--muted); font-weight: 500; }
   .candidate { border: 1px solid var(--line); border-radius: 10px; padding: 1.25rem; }
   .candidate h2 { margin: 0; }
+  .candidate-header { display: flex; justify-content: space-between; gap: 1rem; align-items: center; }
   .sources { margin: 0.5rem 0 1rem; }
   .sources a { color: var(--accent); }
   label span { display: block; margin-bottom: 0.3rem; color: var(--muted); }
   .row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
-  .toolbar, .actions { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; }
+  .toolbar, .actions, .pagination { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; }
   .toolbar { margin: 1.2rem 0; }
   .actions { padding-top: 0.2rem; }
   .secondary { background: transparent; color: var(--text); }
@@ -202,5 +239,6 @@
   .reject { background: var(--danger); }
   .error { color: var(--danger); }
   .notice { color: var(--accent); }
+  .pagination { justify-content: center; margin: 1.25rem 0; }
   @media (max-width: 640px) { .row { grid-template-columns: 1fr; } }
 </style>
