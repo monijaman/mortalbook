@@ -47,6 +47,7 @@ It is never committed and never overwritten by a deploy. Start from [.env.exampl
 | `ADMIN_USERNAME` / `ADMIN_PASSWORD` | Admin login. The password must be at least 16 characters. |
 | `ADMIN_REVIEW_TOKEN` | Token for the recent-death review API. |
 | `RECENT_DEATHS_INGEST_TOKEN` | Token used by the scheduled recent-deaths job. |
+| `GITHUB_ACTIONS_TOKEN` | GitHub PAT used by the admin panel to dispatch a workflow. |
 | `OPENAI_API_KEY` | Enables **Generate story** in the editor. Optional. |
 | `OPENAI_MODEL` | OpenAI model with web search (default `gpt-4.1`). Optional. |
 
@@ -65,6 +66,30 @@ Set or replace one value without opening an editor:
 sed -i '/^OPENAI_API_KEY=/d' .env
 echo 'OPENAI_API_KEY=sk-your-key' >> .env
 ```
+
+### Enable the story-refresh workflow
+
+The manual **Refresh memorial stories** GitHub Action uses `ADMIN_REVIEW_TOKEN` to authenticate
+against the production API. Generate a token on the server if it is not already configured:
+
+```bash
+cd /var/www/mortalbook
+TOKEN=$(openssl rand -hex 32)
+printf '\nADMIN_REVIEW_TOKEN=%s\n' "$TOKEN" >> .env
+printf '%s\n' "$TOKEN"   # copy this into the GitHub Actions secret
+```
+
+In GitHub, open **Settings → Secrets and variables → Actions**, create a repository secret named
+`ADMIN_REVIEW_TOKEN`, and paste in the generated value. Then reload the backend so Docker reads the
+new `.env` value:
+
+```bash
+docker compose up -d --force-recreate backend
+```
+
+Run the workflow from **Actions → Refresh memorial stories → Run workflow**. It processes one person
+at a time, stops when everyone has been processed, and reports updated, skipped, and failed counts
+in the run summary. The refresh marker prevents a successful story from being updated twice.
 
 Changes only apply after the backend is recreated (a plain restart does not reload `.env`):
 
