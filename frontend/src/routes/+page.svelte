@@ -171,7 +171,7 @@
     {:else}
       <div class="grid">
         {#each lostThisWeek as person (person.id)}
-          <PersonCard {person} showAgo />
+          <PersonCard {person} showDeathDetails />
         {/each}
       </div>
     {/if}
@@ -220,7 +220,7 @@
 
 {#if upcoming.length}
   <section class="block">
-    <h2><T text="Coming up this week" /></h2>
+    <h2><T text="Lost souls in next week" /></h2>
     <div class="grid">
       {#each upcoming as person (person.id)}
         <PersonCard {person} showAgo days={person.days} />
@@ -231,7 +231,7 @@
 
 {#if recent.length}
   <section class="block">
-    <h2><T text="Last week" /></h2>
+    <h2><T text="The birds flew last week" /></h2>
     <div class="grid">
       {#each recent as person (person.id)}
         <PersonCard {person} showAgo days={person.days} />

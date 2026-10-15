@@ -1,4 +1,4 @@
-use std::{collections::HashMap, path::PathBuf};
+use std::{collections::HashMap, path::PathBuf, time::Duration};
 
 use axum::{
     extract::{Multipart, Path, Query, State},
@@ -23,7 +23,7 @@ use crate::{
     AppState,
 };
 
-const PERSON_COLS: &str = "id, name, birth_date, death_date, bio, lang, photo_url, occupation, birth_place, death_place, birth_precision, death_precision, created_at";
+const PERSON_COLS: &str = "id, name, birth_date, death_date, bio, lang, photo_url, occupation, birth_place, death_place, birth_precision, death_precision, created_at, story_refreshed_at";
 const ADMIN_SESSION_COOKIE: &str = "mortalbook_admin_session";
 const ADMIN_SESSION_HOURS: i64 = 12;
 
@@ -1080,6 +1080,84 @@ pub async fn admin_list_people(
 }
 
 #[derive(Deserialize)]
+pub struct RefreshStoriesQuery {
+    limit: Option<i64>,
+    offset: Option<i64>,
+}
+
+/// Refresh a bounded batch of public stories using the verified profile facts.
+/// The caller can repeat with the returned next_offset until complete.
+pub async fn refresh_stories(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+    Query(q): Query<RefreshStoriesQuery>,
+) -> Result<Json<Value>, AppError> {
+    require_admin(&headers, &s, false).await?;
+    let Some(api_key) = s.openai_api_key.as_deref() else {
+        return Err(AppError::ServiceUnavailable("story refresh requires OPENAI_API_KEY".into()));
+    };
+    let limit = q.limit.unwrap_or(5).clamp(1, 20);
+    let offset = q.offset.unwrap_or(0).max(0);
+    let people = sqlx::query_as::<_, Person>(&format!(
+        "SELECT {PERSON_COLS} FROM people ORDER BY id LIMIT $1 OFFSET $2"
+    ))
+    .bind(limit)
+    .bind(offset)
+    .fetch_all(&s.db)
+    .await?;
+    let processed = people.len() as i64;
+    let mut updated = 0_i64;
+    let mut failed = 0_i64;
+    let mut skipped = 0_i64;
+    for person in people {
+        if person.story_refreshed_at.is_some() {
+            skipped += 1;
+            continue;
+        }
+        let facts = format!(
+            "Name: {}\nBorn: {}\nDied: {}\nOccupation: {}\nBirth place: {}\nDeath place: {}\n\nExisting story:\n{}",
+            person.name,
+            person.birth_date.map(|v| v.to_string()).unwrap_or_else(|| "unknown".into()),
+            person.death_date,
+            person.occupation.as_deref().unwrap_or("unknown"),
+            person.birth_place.as_deref().unwrap_or("unknown"),
+            person.death_place.as_deref().unwrap_or("unknown"),
+            person.bio,
+        );
+        let response = s.http.post("https://api.openai.com/v1/responses")
+            .bearer_auth(api_key)
+            .timeout(Duration::from_secs(240))
+            .json(&json!({
+                "model": s.openai_model,
+                "instructions": crate::story::INSTRUCTIONS,
+                "input": format!("Review and improve this memorial story using web sources. Preserve verified dates, places, and identity. Keep only well-supported facts.\n\n{facts}"),
+                "tools": [{ "type": "web_search" }],
+                "tool_choice": "auto"
+            }))
+            .send().await;
+        let Ok(response) = response else { failed += 1; continue };
+        let Ok(body) = response.json::<Value>().await else { failed += 1; continue };
+        let story = body["output"].as_array().into_iter().flatten()
+            .filter(|item| item["type"] == "message")
+            .flat_map(|item| item["content"].as_array().into_iter().flatten())
+            .filter(|part| part["type"] == "output_text")
+            .filter_map(|part| part["text"].as_str())
+            .collect::<String>().trim().to_string();
+        if story.is_empty() { failed += 1; continue; }
+        sqlx::query("UPDATE people SET bio = $2, story_refreshed_at = now() WHERE id = $1")
+            .bind(person.id).bind(story).execute(&s.db).await?;
+        updated += 1;
+    }
+    Ok(Json(json!({
+        "processed": processed,
+        "updated": updated,
+        "failed": failed,
+        "skipped": skipped,
+        "next_offset": if processed == limit { Some(offset + processed) } else { None }
+    })))
+}
+
+#[derive(Deserialize)]
 pub struct PersonUpdate {
     name: String,
     birth_date: Option<NaiveDate>,
@@ -1429,6 +1507,7 @@ mod country_filter_tests {
             birth_precision: "year".to_string(),
             death_precision: "day".to_string(),
             created_at: Utc::now(),
+            story_refreshed_at: None,
         }
     }
 

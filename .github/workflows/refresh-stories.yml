@@ -1,0 +1,54 @@
+name: Refresh memorial stories
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: refresh-stories
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Refresh all people in small batches
+        env:
+          MORTALBOOK_API_URL: ${{ vars.MORTALBOOK_API_URL || 'https://mortalbook.com' }}
+          ADMIN_REVIEW_TOKEN: ${{ secrets.ADMIN_REVIEW_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          offset=0
+          total_processed=0
+          total_updated=0
+          total_skipped=0
+          total_failed=0
+          while true; do
+            result=$(curl --fail-with-body --silent --show-error --max-time 120 \
+              -X POST "$MORTALBOOK_API_URL/api/admin/refresh-stories?limit=1&offset=$offset" \
+              -H "Authorization: Bearer $ADMIN_REVIEW_TOKEN")
+            echo "$result"
+            metrics=$(python -c 'import json,sys; d=json.load(sys.stdin); print(d.get("processed",0), d.get("updated",0), d.get("skipped",0), d.get("failed",0))' <<< "$result")
+            read -r processed updated skipped failed <<< "$metrics"
+            total_processed=$((total_processed + processed))
+            total_updated=$((total_updated + updated))
+            total_skipped=$((total_skipped + skipped))
+            total_failed=$((total_failed + failed))
+            next=$(python -c 'import json,sys; print(json.load(sys.stdin).get("next_offset") or "")' <<< "$result")
+            [ -n "$next" ] || break
+            offset="$next"
+            sleep 5
+          done
+          {
+            echo "## Memorial story refresh report"
+            echo ""
+            echo "| Metric | Count |"
+            echo "|---|---:|"
+            echo "| People checked | $total_processed |"
+            echo "| Stories created | $total_updated |"
+            echo "| Already had stories | $total_skipped |"
+            echo "| Failed | $total_failed |"
+          } >> "$GITHUB_STEP_SUMMARY"

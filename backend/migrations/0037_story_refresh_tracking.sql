@@ -1,0 +1,1 @@
+ALTER TABLE people ADD COLUMN IF NOT EXISTS story_refreshed_at TIMESTAMPTZ;

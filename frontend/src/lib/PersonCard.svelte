@@ -3,7 +3,7 @@
   import { years, yearLabel } from '$lib/format.js';
   import { plainText } from '$lib/markdown.js';
 
-  let { person, showAgo = false, days = undefined } = $props();
+  let { person, showAgo = false, showDeathDetails = false, days = undefined } = $props();
   // "Tomorrow", "In 3 days", "Yesterday", "3 days ago" (whole phrase is translated)
   const when = $derived(
     days === undefined ? '' :
@@ -15,6 +15,12 @@
     return text.length > 160 ? text.slice(0, 160).trimEnd() + '…' : text;
   });
   const ago = $derived(showAgo ? years(person.death_date) : 0);
+  const deathDate = $derived(showDeathDetails ? dateLabel(person.death_date, person.death_precision) : '');
+  const country = $derived.by(() => {
+    if (!showDeathDetails || !person.death_place) return '';
+    const parts = person.death_place.split(',').map((part) => part.trim()).filter(Boolean);
+    return parts.at(-1) || person.death_place;
+  });
 </script>
 
 <a class="card" href="/people/{person.id}">
@@ -32,6 +38,12 @@
       {person.birth_date ? yearLabel(person.birth_date, person.birth_precision) : '—'} – {yearLabel(person.death_date, person.death_precision)}
       {#if showAgo && ago > 0}· {ago} <T text={ago === 1 ? 'year ago' : 'years ago'} />{/if}
     </p>
+    {#if showDeathDetails}
+      <p class="death-details">
+        <span><T text="Died" />: {deathDate}</span>
+        {#if country}<span><T text="Country" />: {country}</span>{/if}
+      </p>
+    {/if}
     {#if person.occupation}<p class="occ"><T text={person.occupation} /></p>{/if}
     {#if excerpt}<p class="excerpt"><T text={excerpt} from={person.lang || 'auto'} /></p>{/if}
   </div>
@@ -52,6 +64,7 @@
   .body { padding: 0.9rem 1rem 1.1rem; }
   h3 { margin: 0 0 0.2rem; font-weight: 600; font-size: 1.2rem; }
   .dates { margin: 0 0 0.6rem; color: var(--accent); font-size: 0.9rem; }
+  .death-details { display: grid; gap: 0.15rem; margin: -0.2rem 0 0.6rem; color: var(--muted); font-size: 0.88rem; }
   .occ { margin: -0.3rem 0 0.5rem; color: var(--text); font-size: 0.95rem; font-style: italic; }
   .excerpt { margin: 0; color: var(--muted); font-size: 0.95rem; line-height: 1.5; }
 </style>

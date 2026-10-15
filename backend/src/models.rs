@@ -19,6 +19,7 @@ pub struct Person {
     pub birth_precision: String,
     pub death_precision: String,
     pub created_at: DateTime<Utc>,
+    pub story_refreshed_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Serialize, FromRow)]

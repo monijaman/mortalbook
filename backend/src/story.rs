@@ -24,7 +24,7 @@ pub struct StoryRequest {
     current_story: Option<String>,
 }
 
-const INSTRUCTIONS: &str = "You write memorial biographies for Mortalbook, a site that remembers \
+pub const INSTRUCTIONS: &str = "You write memorial biographies for Mortalbook, a site that remembers \
 people who have passed away. Search the web for reliable sources about the person, then write a \
 respectful, accurate, neutral life story in 3 to 6 paragraphs (about 250 to 500 words unless the \
 admin asks otherwise). Use only facts supported by the sources you found; if sources disagree or \
