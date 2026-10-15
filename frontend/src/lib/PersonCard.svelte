@@ -1,6 +1,6 @@
 <script>
   import T from '$lib/T.svelte';
-  import { years, yearLabel } from '$lib/format.js';
+  import { dateLabel, years, yearLabel } from '$lib/format.js';
   import { plainText } from '$lib/markdown.js';
 
   let { person, showAgo = false, showDeathDetails = false, days = undefined } = $props();

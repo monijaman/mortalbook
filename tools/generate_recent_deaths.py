@@ -183,7 +183,10 @@ def submit_candidates(
     candidates: list[dict[str, Any]], api_url: str, token: str
 ) -> dict[str, Any]:
     queued = 0
-    batches = [candidates[index : index + 200] for index in range(0, len(candidates), 200)]
+    # Story drafts are generated with OpenAI inside the API request. Keep each
+    # request small so the scheduled importer does not time out while processing
+    # a large batch sequentially.
+    batches = [candidates[index : index + 1] for index in range(0, len(candidates), 1)]
     for batch in batches or [[]]:
         payload = json.dumps({"candidates": batch}).encode("utf-8")
         request = Request(
@@ -196,7 +199,7 @@ def submit_candidates(
                 "User-Agent": USER_AGENT,
             },
         )
-        with urlopen(request, timeout=45) as response:
+        with urlopen(request, timeout=300) as response:
             result = json.load(response)
         queued += result.get("queued", 0)
     return {"queued": queued}
