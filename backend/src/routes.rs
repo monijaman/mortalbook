@@ -1109,6 +1109,7 @@ pub async fn refresh_stories(
     let mut updated = 0_i64;
     let mut failed = 0_i64;
     let mut skipped = 0_i64;
+    let mut failures: Vec<String> = Vec::new();
     for person in people {
         if person.story_refreshed_at.is_some() {
             skipped += 1;
@@ -1135,15 +1136,46 @@ pub async fn refresh_stories(
                 "tool_choice": "auto"
             }))
             .send().await;
-        let Ok(response) = response else { failed += 1; continue };
-        let Ok(body) = response.json::<Value>().await else { failed += 1; continue };
+        let response = match response {
+            Ok(response) => response,
+            Err(error) => {
+                tracing::warn!(person = %person.name, "story refresh request failed: {error}");
+                failed += 1;
+                failures.push(format!("{}: {error}", person.name));
+                continue;
+            }
+        };
+        let status = response.status();
+        let body = match response.json::<Value>().await {
+            Ok(body) => body,
+            Err(error) => {
+                tracing::warn!(person = %person.name, %status, "story refresh response unreadable: {error}");
+                failed += 1;
+                failures.push(format!("{}: unreadable response ({status})", person.name));
+                continue;
+            }
+        };
+        if !status.is_success() {
+            let message = body["error"]["message"].as_str()
+                .or_else(|| body["error"].as_str())
+                .unwrap_or("OpenAI request failed");
+            tracing::warn!(person = %person.name, %status, "story refresh rejected: {message}");
+            failed += 1;
+            failures.push(format!("{}: {status} {message}", person.name));
+            continue;
+        }
         let story = body["output"].as_array().into_iter().flatten()
             .filter(|item| item["type"] == "message")
             .flat_map(|item| item["content"].as_array().into_iter().flatten())
             .filter(|part| part["type"] == "output_text")
             .filter_map(|part| part["text"].as_str())
             .collect::<String>().trim().to_string();
-        if story.is_empty() { failed += 1; continue; }
+        if story.is_empty() {
+            tracing::warn!(person = %person.name, "story refresh returned no story");
+            failed += 1;
+            failures.push(format!("{}: empty story response", person.name));
+            continue;
+        }
         sqlx::query("UPDATE people SET bio = $2, story_refreshed_at = now() WHERE id = $1")
             .bind(person.id).bind(story).execute(&s.db).await?;
         updated += 1;
@@ -1153,6 +1185,7 @@ pub async fn refresh_stories(
         "updated": updated,
         "failed": failed,
         "skipped": skipped,
+        "failures": failures,
         "next_offset": if processed == limit { Some(offset + processed) } else { None }
     })))
 }

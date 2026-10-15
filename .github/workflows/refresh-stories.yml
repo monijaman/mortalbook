@@ -27,7 +27,7 @@ jobs:
           total_skipped=0
           total_failed=0
           while true; do
-            result=$(curl --fail-with-body --silent --show-error --max-time 120 \
+            result=$(curl --fail-with-body --silent --show-error --max-time 300 \
               -X POST "$MORTALBOOK_API_URL/api/admin/refresh-stories?limit=1&offset=$offset" \
               -H "Authorization: Bearer $ADMIN_REVIEW_TOKEN")
             echo "$result"
@@ -40,7 +40,7 @@ jobs:
             next=$(python -c 'import json,sys; print(json.load(sys.stdin).get("next_offset") or "")' <<< "$result")
             [ -n "$next" ] || break
             offset="$next"
-            sleep 5
+            sleep 30
           done
           {
             echo "## Memorial story refresh report"
