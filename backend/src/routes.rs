@@ -1,4 +1,4 @@
-use std::{collections::HashMap, path::PathBuf, time::Duration};
+use std::{collections::HashMap, path::PathBuf, time::Duration as StdDuration};
 
 use axum::{
     extract::{Multipart, Path, Query, State},
@@ -1126,7 +1126,7 @@ pub async fn refresh_stories(
         );
         let response = s.http.post("https://api.openai.com/v1/responses")
             .bearer_auth(api_key)
-            .timeout(Duration::from_secs(240))
+            .timeout(StdDuration::from_secs(240))
             .json(&json!({
                 "model": s.openai_model,
                 "instructions": crate::story::INSTRUCTIONS,
