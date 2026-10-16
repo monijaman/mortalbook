@@ -1166,9 +1166,10 @@ pub async fn refresh_stories(
             failures.push(format!("{}: {status} {message}", person.name));
             if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
                 // A project spend limit or account-wide rate limit affects every
-                // remaining candidate. Stop now and retry this candidate later.
+                // remaining candidate. Stop now, but advance past this failed
+                // record so a scheduled run does not retry it forever.
                 quota_exhausted = true;
-                next_offset = offset + index as i64;
+                next_offset = offset + index as i64 + 1;
                 break;
             }
             continue;
