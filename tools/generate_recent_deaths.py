@@ -9,7 +9,7 @@ import re
 import time
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
-from urllib.error import URLError
+from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
@@ -52,10 +52,7 @@ SELECT ?person ?personLabel ?dateOfBirth ?dateOfDeath ?occupationLabel
   VALUES ?occupation { __OCCUPATIONS__ }
   ?person wdt:P31 wd:Q5 ;
           wdt:P106 ?occupation ;
-          wdt:P570 ?dateOfDeath ;
-          p:P570/psv:P570 ?deathValue .
-  ?deathValue wikibase:timeValue ?dateOfDeath ;
-              wikibase:timePrecision 11 .
+          wdt:P570 ?dateOfDeath .
   FILTER(?dateOfDeath >= "__START__"^^xsd:dateTime &&
          ?dateOfDeath <= "__END__"^^xsd:dateTime)
   ?article schema:about ?person ;
@@ -65,16 +62,8 @@ SELECT ?person ?personLabel ?dateOfBirth ?dateOfDeath ?occupationLabel
     ?birthValue wikibase:timeValue ?dateOfBirth ;
                 wikibase:timePrecision 11 .
   }
-  OPTIONAL {
-    ?person wdt:P19 ?birthPlace .
-    ?birthPlace rdfs:label ?birthPlaceLabel .
-    FILTER(lang(?birthPlaceLabel) = "en")
-  }
-  OPTIONAL {
-    ?person wdt:P20 ?deathPlace .
-    ?deathPlace rdfs:label ?deathPlaceLabel .
-    FILTER(lang(?deathPlaceLabel) = "en")
-  }
+  OPTIONAL { ?person wdt:P19 ?birthPlace . }
+  OPTIONAL { ?person wdt:P20 ?deathPlace . }
   SERVICE wikibase:label { bd:serviceParam wikibase:language "en". }
 }
 """
@@ -159,9 +148,16 @@ def parse_candidates(bindings: list[dict[str, Any]], now: datetime) -> list[dict
 
 def fetch_candidates(now: datetime | None = None) -> list[dict[str, Any]]:
     now = now or datetime.now(timezone.utc)
+    payload = urlencode({"query": build_query(now), "format": "json"}).encode()
     request = Request(
-        f"{ENDPOINT}?{urlencode({'query': build_query(now), 'format': 'json'})}",
-        headers={"Accept": "application/sparql-results+json", "User-Agent": USER_AGENT},
+        ENDPOINT,
+        data=payload,
+        method="POST",
+        headers={
+            "Accept": "application/sparql-results+json",
+            "Content-Type": "application/x-www-form-urlencoded",
+            "User-Agent": USER_AGENT,
+        },
     )
     last_error: Exception | None = None
     for attempt in range(SPARQL_ATTEMPTS):
@@ -169,8 +165,16 @@ def fetch_candidates(now: datetime | None = None) -> list[dict[str, Any]]:
             with urlopen(request, timeout=SPARQL_TIMEOUT_SECONDS) as response:
                 result = json.load(response)
             return parse_candidates(result["results"]["bindings"], now)
-        except (TimeoutError, URLError) as error:
+        except (HTTPError, TimeoutError, URLError) as error:
             last_error = error
+            if isinstance(error, HTTPError):
+                # Consume the response so urllib can release the connection and
+                # retain the endpoint's diagnostic message for the final error.
+                details = error.read().decode("utf-8", errors="replace").strip()
+                last_error = RuntimeError(
+                    f"HTTP {error.code} from Wikidata SPARQL endpoint"
+                    + (f": {details[:500]}" if details else "")
+                )
             if attempt == SPARQL_ATTEMPTS - 1:
                 break
             time.sleep(2**attempt)

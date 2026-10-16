@@ -1106,11 +1106,12 @@ pub async fn refresh_stories(
     .fetch_all(&s.db)
     .await?;
     let processed = people.len() as i64;
+    let mut next_offset = offset + processed;
     let mut updated = 0_i64;
     let mut failed = 0_i64;
     let mut skipped = 0_i64;
     let mut failures: Vec<String> = Vec::new();
-    for person in people {
+    for (index, person) in people.into_iter().enumerate() {
         if person.story_refreshed_at.is_some() {
             skipped += 1;
             continue;
@@ -1162,6 +1163,12 @@ pub async fn refresh_stories(
             tracing::warn!(person = %person.name, %status, "story refresh rejected: {message}");
             failed += 1;
             failures.push(format!("{}: {status} {message}", person.name));
+            if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+                // A project spend limit or account-wide rate limit affects every
+                // remaining candidate. Stop now and retry this candidate later.
+                next_offset = offset + index as i64;
+                break;
+            }
             continue;
         }
         let story = body["output"].as_array().into_iter().flatten()
@@ -1186,7 +1193,11 @@ pub async fn refresh_stories(
         "failed": failed,
         "skipped": skipped,
         "failures": failures,
-        "next_offset": if processed == limit { Some(offset + processed) } else { None }
+        "next_offset": if next_offset < offset + processed || processed == limit {
+            Some(next_offset)
+        } else {
+            None
+        }
     })))
 }
 
