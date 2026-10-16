@@ -1110,6 +1110,7 @@ pub async fn refresh_stories(
     let mut updated = 0_i64;
     let mut failed = 0_i64;
     let mut skipped = 0_i64;
+    let mut quota_exhausted = false;
     let mut failures: Vec<String> = Vec::new();
     for (index, person) in people.into_iter().enumerate() {
         if person.story_refreshed_at.is_some() {
@@ -1166,6 +1167,7 @@ pub async fn refresh_stories(
             if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
                 // A project spend limit or account-wide rate limit affects every
                 // remaining candidate. Stop now and retry this candidate later.
+                quota_exhausted = true;
                 next_offset = offset + index as i64;
                 break;
             }
@@ -1192,6 +1194,7 @@ pub async fn refresh_stories(
         "updated": updated,
         "failed": failed,
         "skipped": skipped,
+        "quota_exhausted": quota_exhausted,
         "failures": failures,
         "next_offset": if next_offset < offset + processed || processed == limit {
             Some(next_offset)
