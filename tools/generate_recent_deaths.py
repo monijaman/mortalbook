@@ -18,6 +18,7 @@ USER_AGENT = "MortalbookRecentDeathsBot/1.0 (GitHub Actions)"
 SPARQL_TIMEOUT_SECONDS = 120
 SPARQL_ATTEMPTS = 3
 SPARQL_OCCUPATION_BATCH_SIZE = 4
+SUBMIT_ATTEMPTS = 3
 
 OCCUPATIONS = (
     "Q33999",       # actor
@@ -207,9 +208,27 @@ def submit_candidates(
                 "User-Agent": USER_AGENT,
             },
         )
-        with urlopen(request, timeout=300) as response:
-            result = json.load(response)
-        queued += result.get("queued", 0)
+        last_error: Exception | None = None
+        for attempt in range(SUBMIT_ATTEMPTS):
+            try:
+                with urlopen(request, timeout=300) as response:
+                    result = json.load(response)
+                queued += result.get("queued", 0)
+                break
+            except (HTTPError, TimeoutError, URLError) as error:
+                last_error = error
+                if isinstance(error, HTTPError):
+                    details = error.read().decode("utf-8", errors="replace").strip()
+                    last_error = RuntimeError(
+                        f"HTTP {error.code} from Mortalbook API"
+                        + (f": {details[:500]}" if details else "")
+                    )
+                if attempt < SUBMIT_ATTEMPTS - 1:
+                    time.sleep(2**attempt)
+        else:
+            raise RuntimeError(
+                f"Mortalbook API request failed after {SUBMIT_ATTEMPTS} attempts"
+            ) from last_error
     return {"queued": queued}
 
 
