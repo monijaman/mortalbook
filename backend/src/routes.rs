@@ -1099,7 +1099,9 @@ pub async fn refresh_stories(
     let limit = q.limit.unwrap_or(5).clamp(1, 20);
     let offset = q.offset.unwrap_or(0).max(0);
     let people = sqlx::query_as::<_, Person>(&format!(
-        "SELECT {PERSON_COLS} FROM people ORDER BY id LIMIT $1 OFFSET $2"
+        "SELECT {PERSON_COLS} FROM people
+         WHERE story_refreshed_at IS NULL
+         ORDER BY id LIMIT $1 OFFSET $2"
     ))
     .bind(limit)
     .bind(offset)
@@ -1109,14 +1111,9 @@ pub async fn refresh_stories(
     let mut next_offset = offset + processed;
     let mut updated = 0_i64;
     let mut failed = 0_i64;
-    let mut skipped = 0_i64;
     let mut quota_exhausted = false;
     let mut failures: Vec<String> = Vec::new();
     for (index, person) in people.into_iter().enumerate() {
-        if person.story_refreshed_at.is_some() {
-            skipped += 1;
-            continue;
-        }
         let facts = format!(
             "Name: {}\nBorn: {}\nDied: {}\nOccupation: {}\nBirth place: {}\nDeath place: {}\n\nExisting story:\n{}",
             person.name,
@@ -1194,7 +1191,6 @@ pub async fn refresh_stories(
         "processed": processed,
         "updated": updated,
         "failed": failed,
-        "skipped": skipped,
         "quota_exhausted": quota_exhausted,
         "failures": failures,
         "next_offset": if next_offset < offset + processed || processed == limit {
