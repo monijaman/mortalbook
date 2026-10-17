@@ -17,6 +17,7 @@ ENDPOINT = "https://query.wikidata.org/sparql"
 USER_AGENT = "MortalbookRecentDeathsBot/1.0 (GitHub Actions)"
 SPARQL_TIMEOUT_SECONDS = 120
 SPARQL_ATTEMPTS = 3
+SPARQL_OCCUPATION_BATCH_SIZE = 4
 
 OCCUPATIONS = (
     "Q33999",       # actor
@@ -80,11 +81,11 @@ def parse_date(value: str | None) -> date | None:
     return datetime.fromisoformat(value.replace("Z", "+00:00")).date()
 
 
-def build_query(now: datetime) -> str:
+def build_query(now: datetime, occupations: tuple[str, ...] = OCCUPATIONS) -> str:
     now = now.astimezone(timezone.utc)
     start = (now - timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%SZ")
     end = now.strftime("%Y-%m-%dT%H:%M:%SZ")
-    occupations = " ".join(f"wd:{item}" for item in OCCUPATIONS)
+    occupations = " ".join(f"wd:{item}" for item in occupations)
     return (
         QUERY.replace("__OCCUPATIONS__", occupations)
         .replace("__START__", start)
@@ -148,39 +149,42 @@ def parse_candidates(bindings: list[dict[str, Any]], now: datetime) -> list[dict
 
 def fetch_candidates(now: datetime | None = None) -> list[dict[str, Any]]:
     now = now or datetime.now(timezone.utc)
-    payload = urlencode({"query": build_query(now), "format": "json"}).encode()
-    request = Request(
-        ENDPOINT,
-        data=payload,
-        method="POST",
-        headers={
-            "Accept": "application/sparql-results+json",
-            "Content-Type": "application/x-www-form-urlencoded",
-            "User-Agent": USER_AGENT,
-        },
-    )
-    last_error: Exception | None = None
-    for attempt in range(SPARQL_ATTEMPTS):
-        try:
-            with urlopen(request, timeout=SPARQL_TIMEOUT_SECONDS) as response:
-                result = json.load(response)
-            return parse_candidates(result["results"]["bindings"], now)
-        except (HTTPError, TimeoutError, URLError) as error:
-            last_error = error
-            if isinstance(error, HTTPError):
-                # Consume the response so urllib can release the connection and
-                # retain the endpoint's diagnostic message for the final error.
-                details = error.read().decode("utf-8", errors="replace").strip()
-                last_error = RuntimeError(
-                    f"HTTP {error.code} from Wikidata SPARQL endpoint"
-                    + (f": {details[:500]}" if details else "")
-                )
-            if attempt == SPARQL_ATTEMPTS - 1:
+    bindings: list[dict[str, Any]] = []
+    for start in range(0, len(OCCUPATIONS), SPARQL_OCCUPATION_BATCH_SIZE):
+        occupation_batch = OCCUPATIONS[start : start + SPARQL_OCCUPATION_BATCH_SIZE]
+        payload = urlencode({"query": build_query(now, occupation_batch), "format": "json"}).encode()
+        request = Request(
+            ENDPOINT,
+            data=payload,
+            method="POST",
+            headers={
+                "Accept": "application/sparql-results+json",
+                "Content-Type": "application/x-www-form-urlencoded",
+                "User-Agent": USER_AGENT,
+            },
+        )
+        last_error: Exception | None = None
+        for attempt in range(SPARQL_ATTEMPTS):
+            try:
+                with urlopen(request, timeout=SPARQL_TIMEOUT_SECONDS) as response:
+                    result = json.load(response)
+                bindings.extend(result["results"]["bindings"])
                 break
-            time.sleep(2**attempt)
-    raise RuntimeError(
-        f"Wikidata SPARQL request failed after {SPARQL_ATTEMPTS} attempts"
-    ) from last_error
+            except (HTTPError, TimeoutError, URLError) as error:
+                last_error = error
+                if isinstance(error, HTTPError):
+                    details = error.read().decode("utf-8", errors="replace").strip()
+                    last_error = RuntimeError(
+                        f"HTTP {error.code} from Wikidata SPARQL endpoint"
+                        + (f": {details[:500]}" if details else "")
+                    )
+                if attempt < SPARQL_ATTEMPTS - 1:
+                    time.sleep(2**attempt)
+        else:
+            raise RuntimeError(
+                f"Wikidata SPARQL request failed after {SPARQL_ATTEMPTS} attempts"
+            ) from last_error
+    return parse_candidates(bindings, now)
 
 
 def submit_candidates(
