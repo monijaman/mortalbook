@@ -59,7 +59,7 @@ async fn main() -> anyhow::Result<()> {
     let r2 = match (env::var("R2_ENDPOINT").ok(), env::var("R2_BUCKET").ok(), env::var("R2_ACCESS_KEY_ID").ok(), env::var("R2_SECRET_ACCESS_KEY").ok(), env::var("R2_PUBLIC_URL").ok()) {
         (Some(endpoint), Some(bucket), Some(access), Some(secret), Some(public_url)) if [endpoint.as_str(), bucket.as_str(), access.as_str(), secret.as_str(), public_url.as_str()].iter().all(|v| !v.is_empty()) => {
             let credentials = aws_sdk_s3::config::Credentials::new(access, secret, None, None, "r2");
-            let config = aws_sdk_s3::config::Builder::new().endpoint_url(endpoint).region(aws_sdk_s3::config::Region::new("auto")).credentials_provider(credentials).force_path_style(true).build();
+            let config = aws_sdk_s3::config::Builder::new().behavior_version(aws_sdk_s3::config::BehaviorVersion::latest()).endpoint_url(endpoint).region(aws_sdk_s3::config::Region::new("auto")).credentials_provider(credentials).force_path_style(true).build();
             Some(R2Storage { client: aws_sdk_s3::Client::from_conf(config), bucket, public_url: public_url.trim_end_matches('/').to_string() })
         }
         _ => None,
