@@ -966,7 +966,7 @@ pub async fn ingest_recent_deaths(
                     _ => "jpg",
                 };
                 let key = format!("recent-deaths/{}.{}", Uuid::new_v4(), extension);
-                if let Some(stored_url) = upload_to_r2(&s, &key, content_type, bytes.to_vec()).await? {
+                if let Some(stored_url) = upload_to_r2(&s, &key, &content_type, bytes.to_vec()).await? {
                     stored_images.push(stored_url);
                 }
             }
