@@ -219,6 +219,12 @@ def submit_candidates(
                 last_error = error
                 if isinstance(error, HTTPError):
                     details = error.read().decode("utf-8", errors="replace").strip()
+                    if "spend limit" in details.lower() or "insufficient_quota" in details.lower():
+                        raise RuntimeError(
+                            "OpenAI project spend limit reached; increase the project limit "
+                            "before rerunning the recent-deaths importer. "
+                            + (details[:500] if details else "")
+                        ) from error
                     last_error = RuntimeError(
                         f"HTTP {error.code} from Mortalbook API"
                         + (f": {details[:500]}" if details else "")
