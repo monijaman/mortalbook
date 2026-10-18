@@ -79,6 +79,19 @@
     }
   }
 
+  async function uploadImages(person, event) {
+    const files = [...event.currentTarget.files];
+    if (!files.length) return;
+    const form = new FormData();
+    files.forEach((file) => form.append('image', file));
+    busyId = person.id;
+    try {
+      const result = await adminApi(`/api/admin/pending-people/${person.id}/images`, { method: 'POST', body: form });
+      person.image_urls = [...(person.image_urls || []), ...result.image_urls];
+      notice = `${result.image_urls.length} image(s) uploaded.`;
+    } catch (err) { error = err.message; } finally { busyId = ''; event.currentTarget.value = ''; }
+  }
+
   async function decide(person, decision) {
     if (decision === 'reject' && !confirm(`Reject ${person.name}?`)) return;
     busyId = person.id;
@@ -211,6 +224,11 @@
           <span>Image URLs (one per line, optional)</span>
           <textarea rows="4" value={(person.image_urls || []).join('\\n')} oninput={(event) => person.image_urls = event.currentTarget.value.split('\\n').map((url) => url.trim()).filter(Boolean)} placeholder="https://example.com/photo.jpg"></textarea>
           <small class="muted">Use direct HTTPS image links. Up to 5 images.</small>
+        </label>
+        <label>
+          <span>Upload images to R2</span>
+          <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple onchange={(event) => uploadImages(person, event)} disabled={busyId === person.id} />
+          <small class="muted">Select up to 5 images. Uploads are stored in R2.</small>
         </label>
         <label>
           <span>Occupation</span>

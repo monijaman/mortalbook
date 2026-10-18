@@ -1483,6 +1483,29 @@ pub async fn update_pending_person(
     Ok(Json(json!({ "updated": true })))
 }
 
+pub async fn upload_pending_images(
+    State(s): State<AppState>, headers: HeaderMap, Path(id): Path<Uuid>, mut mp: Multipart,
+) -> Result<Json<Value>, AppError> {
+    require_admin(&headers, &s, true).await?;
+    if s.r2.is_none() { return Err(AppError::ServiceUnavailable("R2 storage is not configured".into())); }
+    let mut urls = Vec::new();
+    while let Some(mut field) = mp.next_field().await.map_err(bad)? {
+        if field.name() != Some("image") { continue; }
+        let ct = field.content_type().unwrap_or("").to_string();
+        if !ct.starts_with("image/") { return Err(AppError::BadRequest("only image files are supported".into())); }
+        let bytes = field.bytes().await.map_err(bad)?;
+        if bytes.len() > 20 * 1024 * 1024 { return Err(AppError::BadRequest("image must be 20 MB or smaller".into())); }
+        let ext = match ct.as_str() { "image/png" => "png", "image/webp" => "webp", "image/gif" => "gif", _ => "jpg" };
+        let key = format!("review/{}.{}", Uuid::new_v4(), ext);
+        if let Some(url) = upload_to_r2(&s, &key, &ct, bytes.to_vec()).await? { urls.push(url); }
+    }
+    if urls.is_empty() || urls.len() > 5 { return Err(AppError::BadRequest("upload between 1 and 5 images".into())); }
+    let result = sqlx::query("UPDATE pending_people SET image_urls = image_urls || $2, updated_at = now() WHERE id = $1 AND status = 'pending'")
+        .bind(id).bind(&urls).execute(&s.db).await?;
+    if result.rows_affected() == 0 { return Err(AppError::NotFound); }
+    Ok(Json(json!({ "image_urls": urls })))
+}
+
 #[derive(Deserialize)]
 pub struct BulkPendingPeople { ids: Vec<Uuid> }
 

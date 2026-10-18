@@ -45,11 +45,17 @@ jobs:
           rsync -az --delete \
             --exclude .git --exclude .env --exclude target --exclude node_modules \
             ./ "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:/var/www/mortalbook/"
-      - name: Rebuild and restart
+      - name: Build images before touching the running site
         run: |
           ssh "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" '
             cd /var/www/mortalbook &&
-            docker compose up -d --build &&
+            docker compose build backend frontend
+          '
+      - name: Deploy verified images
+        run: |
+          ssh "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" '
+            cd /var/www/mortalbook &&
+            docker compose up -d --no-build backend frontend &&
             for i in $(seq 1 20); do
               curl -fsS http://127.0.0.1:3020/api/health && exit 0; sleep 3
             done; echo "health check failed"; docker compose logs --tail=50 backend; exit 1
