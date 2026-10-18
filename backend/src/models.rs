@@ -49,6 +49,7 @@ pub struct PendingPerson {
     pub death_place: Option<String>,
     pub wikidata_url: String,
     pub wikipedia_url: String,
+    pub image_urls: Vec<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }

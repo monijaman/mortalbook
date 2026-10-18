@@ -618,6 +618,8 @@ pub struct RecentDeathCandidate {
     birth_place: Option<String>,
     death_place: Option<String>,
     wikipedia_url: String,
+    #[serde(default)]
+    image_urls: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -866,6 +868,8 @@ fn validate_recent_death_candidate(
     {
         return Err(AppError::BadRequest("candidate must include an English Wikipedia article URL".into()));
     }
+    candidate.image_urls.retain(|url| url.starts_with("https://commons.wikimedia.org/"));
+    candidate.image_urls.truncate(5);
     normalize_optional_text(&mut candidate.occupation, "occupation", 500)?;
     normalize_optional_text(&mut candidate.birth_place, "birth place", 300)?;
     normalize_optional_text(&mut candidate.death_place, "death place", 300)?;
@@ -958,8 +962,8 @@ pub async fn ingest_recent_deaths(
         let result = sqlx::query(
             "INSERT INTO pending_people (
                 id, wikidata_id, name, birth_date, death_date, bio, occupation,
-                birth_place, death_place, wikidata_url, wikipedia_url, status, reviewed_at
-             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'approved', now())
+                birth_place, death_place, wikidata_url, wikipedia_url, image_urls, status, reviewed_at
+             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'approved', now())
              ON CONFLICT (wikidata_id) DO NOTHING",
         )
         .bind(import_id)
@@ -973,26 +977,34 @@ pub async fn ingest_recent_deaths(
         .bind(&candidate.death_place)
         .bind(wikidata_url)
         .bind(candidate.wikipedia_url)
+        .bind(&candidate.image_urls)
         .execute(&mut *tx)
         .await?;
         if result.rows_affected() > 0 {
+            let person_id = Uuid::new_v4();
             sqlx::query(
-                "INSERT INTO people (
-                    id, name, birth_date, death_date, bio, lang, occupation, birth_place, death_place,
+            "INSERT INTO people (
+                    id, name, birth_date, death_date, bio, lang, photo_url, occupation, birth_place, death_place,
                     birth_precision, death_precision
-                 ) VALUES ($1, $2, $3, $4, $5, 'en', $6, $7, $8,
+                 ) VALUES ($1, $2, $3, $4, $5, 'en', $6, $7, $8, $9,
                     CASE WHEN $3 IS NULL THEN 'year' ELSE 'day' END, 'day')",
             )
-            .bind(Uuid::new_v4())
+            .bind(person_id)
             .bind(&candidate.name)
             .bind(candidate.birth_date)
             .bind(candidate.death_date)
             .bind(&bio)
+            .bind(candidate.image_urls.first())
             .bind(&candidate.occupation)
             .bind(&candidate.birth_place)
             .bind(&candidate.death_place)
             .execute(&mut *tx)
             .await?;
+            for image_url in &candidate.image_urls {
+                sqlx::query("INSERT INTO media (id, person_id, kind, url) VALUES ($1, $2, 'image', $3)")
+                    .bind(Uuid::new_v4()).bind(person_id).bind(image_url)
+                    .execute(&mut *tx).await?;
+            }
         }
         inserted += result.rows_affected();
     }
@@ -1324,7 +1336,7 @@ pub async fn pending_people(
     require_admin(&headers, &s, false).await?;
     let pending = sqlx::query_as::<_, PendingPerson>(
         "SELECT id, wikidata_id, name, birth_date, death_date, bio, occupation,
-                birth_place, death_place, wikidata_url, wikipedia_url, created_at, updated_at
+                birth_place, death_place, wikidata_url, wikipedia_url, image_urls, created_at, updated_at
          FROM pending_people
          WHERE status = 'pending'
          ORDER BY death_date DESC, name",
@@ -1432,7 +1444,7 @@ pub async fn bulk_approve_pending_people(
     for id in request.ids {
         let pending = sqlx::query_as::<_, PendingPerson>(
             "SELECT id, wikidata_id, name, birth_date, death_date, bio, occupation,
-                    birth_place, death_place, wikidata_url, wikipedia_url, created_at, updated_at
+                    birth_place, death_place, wikidata_url, wikipedia_url, image_urls, created_at, updated_at
              FROM pending_people WHERE id = $1 AND status = 'pending' FOR UPDATE",
         ).bind(id).fetch_optional(&mut *tx).await?;
         let Some(pending) = pending else { continue };
@@ -1441,11 +1453,11 @@ pub async fn bulk_approve_pending_people(
         }
         let result = sqlx::query(
             "INSERT INTO people (id, name, birth_date, death_date, bio, lang, occupation, birth_place, death_place, birth_precision, death_precision)
-             SELECT $1, $2, $3, $4, $5, 'en', $6, $7, $8, CASE WHEN $3 IS NULL THEN 'year' ELSE 'day' END, 'day'
+         SELECT $1, $2, $3, $4, $5, 'en', $9[1], $6, $7, $8, CASE WHEN $3 IS NULL THEN 'year' ELSE 'day' END, 'day'
              WHERE NOT EXISTS (SELECT 1 FROM people WHERE lower(name) = lower($2) AND death_date = $4)",
         ).bind(Uuid::new_v4()).bind(&pending.name).bind(pending.birth_date)
          .bind(pending.death_date).bind(&pending.bio).bind(&pending.occupation)
-         .bind(&pending.birth_place).bind(&pending.death_place).execute(&mut *tx).await?;
+         .bind(&pending.birth_place).bind(&pending.death_place).bind(&pending.image_urls).execute(&mut *tx).await?;
         if result.rows_affected() > 0 { published += 1; }
         sqlx::query("UPDATE pending_people SET status = 'approved', reviewed_at = now(), updated_at = now() WHERE id = $1")
             .bind(id).execute(&mut *tx).await?;
@@ -1463,7 +1475,7 @@ pub async fn approve_pending_person(
     let mut tx = s.db.begin().await?;
     let pending = sqlx::query_as::<_, PendingPerson>(
         "SELECT id, wikidata_id, name, birth_date, death_date, bio, occupation,
-                birth_place, death_place, wikidata_url, wikipedia_url, created_at, updated_at
+                birth_place, death_place, wikidata_url, wikipedia_url, image_urls, created_at, updated_at
          FROM pending_people
          WHERE id = $1 AND status = 'pending'
          FOR UPDATE",
@@ -1482,11 +1494,11 @@ pub async fn approve_pending_person(
         pending.bio, pending.wikidata_url, pending.wikipedia_url
     );
     sqlx::query(
-        "INSERT INTO people (
-            id, name, birth_date, death_date, bio, lang, occupation, birth_place, death_place,
+            "INSERT INTO people (
+            id, name, birth_date, death_date, bio, lang, photo_url, occupation, birth_place, death_place,
             birth_precision, death_precision
          )
-         SELECT $1, $2, $3, $4, $5, 'en', $6, $7, $8,
+         SELECT $1, $2, $3, $4, $5, 'en', $9[1], $6, $7, $8,
                 CASE WHEN $3 IS NULL THEN 'year' ELSE 'day' END, 'day'
          WHERE NOT EXISTS (
             SELECT 1 FROM people WHERE lower(name) = lower($2) AND death_date = $4
@@ -1500,6 +1512,7 @@ pub async fn approve_pending_person(
     .bind(&pending.occupation)
     .bind(&pending.birth_place)
     .bind(&pending.death_place)
+    .bind(&pending.image_urls)
     .execute(&mut *tx)
     .await?;
     sqlx::query(

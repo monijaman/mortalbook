@@ -19,6 +19,7 @@ SPARQL_TIMEOUT_SECONDS = 120
 SPARQL_ATTEMPTS = 3
 SPARQL_OCCUPATION_BATCH_SIZE = 4
 SUBMIT_ATTEMPTS = 3
+MAX_IMAGES = 5
 
 OCCUPATIONS = (
     "Q33999",       # actor
@@ -49,7 +50,7 @@ PREFIX p: <http://www.wikidata.org/prop/>
 PREFIX psv: <http://www.wikidata.org/prop/statement/value/>
 PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-SELECT ?person ?personLabel ?dateOfBirth ?dateOfDeath ?occupationLabel
+SELECT ?person ?personLabel ?dateOfBirth ?dateOfDeath ?occupationLabel ?image
        ?birthPlaceLabel ?deathPlaceLabel ?article WHERE {
   VALUES ?occupation { __OCCUPATIONS__ }
   ?person wdt:P31 wd:Q5 ;
@@ -66,6 +67,7 @@ SELECT ?person ?personLabel ?dateOfBirth ?dateOfDeath ?occupationLabel
   }
   OPTIONAL { ?person wdt:P19 ?birthPlace . }
   OPTIONAL { ?person wdt:P20 ?deathPlace . }
+  OPTIONAL { ?person wdt:P18 ?image . }
   SERVICE wikibase:label { bd:serviceParam wikibase:language "en". }
 }
 """
@@ -124,6 +126,7 @@ def parse_candidates(bindings: list[dict[str, Any]], now: datetime) -> list[dict
                 "birth_place": None,
                 "death_place": None,
                 "wikipedia_url": article,
+                "image_urls": [],
             },
         )
         birth_date = parse_date(binding_value(row, "dateOfBirth"))
@@ -138,6 +141,15 @@ def parse_candidates(bindings: list[dict[str, Any]], now: datetime) -> list[dict
         candidate["death_place"] = candidate["death_place"] or binding_value(
             row, "deathPlaceLabel"
         )
+        image = binding_value(row, "image")
+        if image and image.startswith("http") and image not in candidate["image_urls"]:
+            from urllib.parse import quote
+            filename = image.rsplit("/", 1)[-1]
+            candidate["image_urls"].append(
+                "https://commons.wikimedia.org/wiki/Special:FilePath/"
+                + quote(filename, safe="") + "?width=1200"
+            )
+            candidate["image_urls"] = candidate["image_urls"][:MAX_IMAGES]
 
     candidates = list(grouped.values())
     for candidate in candidates:
