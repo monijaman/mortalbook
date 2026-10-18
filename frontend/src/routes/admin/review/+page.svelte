@@ -18,7 +18,10 @@
   let allSelected = $derived(pagePeople.length > 0 && pagePeople.every((person) => selectedIds.has(person.id)));
 
   onMount(() => {
-    loadPeople().catch((err) => { error = err.message; });
+    loadPeople().then(() => {
+      const requestedId = new URLSearchParams(window.location.search).get('edit');
+      if (requestedId && people.some((person) => person.id === requestedId)) editingId = requestedId;
+    }).catch((err) => { error = err.message; });
   });
 
   async function loadPeople() {
@@ -55,6 +58,7 @@
       occupation: person.occupation || null,
       birth_place: person.birth_place || null,
       death_place: person.death_place || null
+      ,image_urls: person.image_urls || []
     };
   }
 
@@ -203,6 +207,11 @@
             <input type="date" bind:value={person.death_date} required />
           </label>
         </div>
+        <label>
+          <span>Image URLs (one per line, optional)</span>
+          <textarea rows="4" value={(person.image_urls || []).join('\\n')} oninput={(event) => person.image_urls = event.currentTarget.value.split('\\n').map((url) => url.trim()).filter(Boolean)} placeholder="https://example.com/photo.jpg"></textarea>
+          <small class="muted">Use direct HTTPS image links. Up to 5 images.</small>
+        </label>
         <label>
           <span>Occupation</span>
           <input bind:value={person.occupation} maxlength="500" />

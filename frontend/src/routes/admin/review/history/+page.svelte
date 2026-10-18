@@ -89,7 +89,7 @@
 
 <table>
   <thead>
-    <tr><th>Imported</th><th>Name</th><th>Date of passing</th><th>Status</th><th>Sources</th></tr>
+    <tr><th>Imported</th><th>Name</th><th>Date of passing</th><th>Status</th><th>Sources</th><th>Actions</th></tr>
   </thead>
   <tbody>
     {#each items as item (item.id)}
@@ -107,6 +107,13 @@
           <a href={item.wikidata_url} target="_blank" rel="noopener noreferrer">Wikidata</a>
           ·
           <a href={item.wikipedia_url} target="_blank" rel="noopener noreferrer">Wikipedia</a>
+        </td>
+        <td>
+          {#if item.status === 'pending'}
+            <a class="edit" href={`/admin/review?edit=${item.id}`}>Edit</a>
+          {:else}
+            <span class="muted">—</span>
+          {/if}
         </td>
       </tr>
     {/each}

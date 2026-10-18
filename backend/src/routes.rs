@@ -534,7 +534,7 @@ async fn create_inner(
                 saved.push(Saved {
                     kind,
                     url: format!("/uploads/{file_name}"),
-                    path: Some(path),
+                    path: Some(path.clone()),
                     is_photo,
                 });
                 while let Some(chunk) = field.chunk().await.map_err(bad)? {
@@ -645,6 +645,8 @@ pub struct PendingPersonUpdate {
     occupation: Option<String>,
     birth_place: Option<String>,
     death_place: Option<String>,
+    #[serde(default)]
+    image_urls: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -908,6 +910,10 @@ fn validate_pending_update(mut update: PendingPersonUpdate) -> Result<PendingPer
     normalize_optional_text(&mut update.occupation, "occupation", 500)?;
     normalize_optional_text(&mut update.birth_place, "birth place", 300)?;
     normalize_optional_text(&mut update.death_place, "death place", 300)?;
+    update.image_urls = update.image_urls.into_iter().map(|url| url.trim().to_string()).filter(|url| !url.is_empty()).collect();
+    if update.image_urls.len() > 5 || update.image_urls.iter().any(|url| !(url.starts_with("https://") || url.starts_with("http://")) || url.len() > 2000) {
+        return Err(AppError::BadRequest("use up to 5 valid web image URLs".into()));
+    }
     Ok(update)
 }
 
@@ -944,7 +950,8 @@ pub async fn ingest_recent_deaths(
                 let content_type = response.headers().get("content-type")
                     .and_then(|value| value.to_str().ok())
                     .unwrap_or("image/jpeg")
-                    .split(';').next().unwrap_or("image/jpeg");
+                    .split(';').next().unwrap_or("image/jpeg")
+                    .to_string();
                 if !content_type.starts_with("image/") {
                     continue;
                 }
@@ -952,7 +959,7 @@ pub async fn ingest_recent_deaths(
                 if bytes.len() > 20 * 1024 * 1024 {
                     continue;
                 }
-                let extension = match content_type {
+                let extension = match content_type.as_str() {
                     "image/png" => "png",
                     "image/webp" => "webp",
                     "image/gif" => "gif",
@@ -1456,7 +1463,7 @@ pub async fn update_pending_person(
     let result = sqlx::query(
         "UPDATE pending_people SET
             name = $2, birth_date = $3, death_date = $4, bio = $5, occupation = $6,
-            birth_place = $7, death_place = $8, updated_at = now()
+            birth_place = $7, death_place = $8, image_urls = $9, updated_at = now()
          WHERE id = $1 AND status = 'pending'",
     )
     .bind(id)
@@ -1467,6 +1474,7 @@ pub async fn update_pending_person(
     .bind(update.occupation)
     .bind(update.birth_place)
     .bind(update.death_place)
+    .bind(update.image_urls)
     .execute(&s.db)
     .await?;
     if result.rows_affected() == 0 {
