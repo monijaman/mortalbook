@@ -28,6 +28,14 @@ pub struct AppState {
     pub openai_model: String,
     pub recent_deaths_ingest_token: Option<String>,
     pub github_actions_token: Option<String>,
+    pub r2: Option<R2Storage>,
+}
+
+#[derive(Clone)]
+pub struct R2Storage {
+    pub client: aws_sdk_s3::Client,
+    pub bucket: String,
+    pub public_url: String,
 }
 
 const MAX_UPLOAD_BYTES: usize = 300 * 1024 * 1024;
@@ -47,6 +55,15 @@ async fn main() -> anyhow::Result<()> {
 
     let db = PgPoolOptions::new().max_connections(10).connect(&database_url).await?;
     sqlx::migrate!("./migrations").run(&db).await?;
+
+    let r2 = match (env::var("R2_ENDPOINT").ok(), env::var("R2_BUCKET").ok(), env::var("R2_ACCESS_KEY_ID").ok(), env::var("R2_SECRET_ACCESS_KEY").ok(), env::var("R2_PUBLIC_URL").ok()) {
+        (Some(endpoint), Some(bucket), Some(access), Some(secret), Some(public_url)) if [endpoint.as_str(), bucket.as_str(), access.as_str(), secret.as_str(), public_url.as_str()].iter().all(|v| !v.is_empty()) => {
+            let credentials = aws_sdk_s3::config::Credentials::new(access, secret, None, None, "r2");
+            let config = aws_sdk_s3::config::Builder::new().endpoint_url(endpoint).region(aws_sdk_s3::config::Region::new("auto")).credentials_provider(credentials).force_path_style(true).build();
+            Some(R2Storage { client: aws_sdk_s3::Client::from_conf(config), bucket, public_url: public_url.trim_end_matches('/').to_string() })
+        }
+        _ => None,
+    };
 
     let state = AppState {
         db,
@@ -77,6 +94,7 @@ async fn main() -> anyhow::Result<()> {
         github_actions_token: env::var("GITHUB_ACTIONS_TOKEN")
             .ok()
             .filter(|value| !value.is_empty()),
+        r2,
     };
 
     let app = Router::new()

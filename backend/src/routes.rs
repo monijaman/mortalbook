@@ -437,6 +437,14 @@ struct Saved {
     is_photo: bool,
 }
 
+async fn upload_to_r2(s: &AppState, key: &str, content_type: &str, bytes: Vec<u8>) -> Result<Option<String>, AppError> {
+    let Some(r2) = &s.r2 else { return Ok(None); };
+    r2.client.put_object().bucket(&r2.bucket).key(key).content_type(content_type)
+        .body(aws_sdk_s3::primitives::ByteStream::from(bytes)).send().await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!(e)))?;
+    Ok(Some(format!("{}/{}", r2.public_url, key)))
+}
+
 fn ext_for(content_type: &str) -> Option<(&'static str, &'static str)> {
     Some(match content_type {
         "image/jpeg" => ("image", "jpg"),
@@ -522,7 +530,7 @@ async fn create_inner(
                 }
                 let file_name = format!("{}.{ext}", Uuid::new_v4());
                 let path = s.upload_dir.join(&file_name);
-                let mut file = fs::File::create(&path).await?;
+                let mut bytes = Vec::new();
                 saved.push(Saved {
                     kind,
                     url: format!("/uploads/{file_name}"),
@@ -530,9 +538,15 @@ async fn create_inner(
                     is_photo,
                 });
                 while let Some(chunk) = field.chunk().await.map_err(bad)? {
-                    file.write_all(&chunk).await?;
+                    bytes.extend_from_slice(&chunk);
                 }
-                file.flush().await?;
+                if let Some(url) = upload_to_r2(s, &file_name, &ct, bytes.clone()).await? {
+                    if let Some(item) = saved.last_mut() { item.url = url; item.path = None; }
+                } else {
+                    let mut file = fs::File::create(&path).await?;
+                    file.write_all(&bytes).await?;
+                    file.flush().await?;
+                }
             }
             _ => {}
         }
@@ -918,7 +932,39 @@ pub async fn ingest_recent_deaths(
 
     let mut inserted = 0_u64;
     let mut tx = s.db.begin().await?;
-    for candidate in candidates {
+    for mut candidate in candidates {
+        if s.r2.is_some() {
+            let mut stored_images = Vec::new();
+            for image_url in &candidate.image_urls {
+                let response = s.http.get(image_url).send().await
+                    .map_err(|error| AppError::Internal(error.into()))?;
+                if !response.status().is_success() {
+                    continue;
+                }
+                let content_type = response.headers().get("content-type")
+                    .and_then(|value| value.to_str().ok())
+                    .unwrap_or("image/jpeg")
+                    .split(';').next().unwrap_or("image/jpeg");
+                if !content_type.starts_with("image/") {
+                    continue;
+                }
+                let bytes = response.bytes().await.map_err(|error| AppError::Internal(error.into()))?;
+                if bytes.len() > 20 * 1024 * 1024 {
+                    continue;
+                }
+                let extension = match content_type {
+                    "image/png" => "png",
+                    "image/webp" => "webp",
+                    "image/gif" => "gif",
+                    _ => "jpg",
+                };
+                let key = format!("recent-deaths/{}.{}", Uuid::new_v4(), extension);
+                if let Some(stored_url) = upload_to_r2(&s, &key, content_type, bytes.to_vec()).await? {
+                    stored_images.push(stored_url);
+                }
+            }
+            candidate.image_urls = stored_images;
+        }
         let draft = crate::story::generate_import_story(
             &s,
             &candidate.name,
