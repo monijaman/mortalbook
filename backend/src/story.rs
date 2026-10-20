@@ -10,6 +10,20 @@ use crate::{error::AppError, routes::require_admin, AppState};
 const MAX_PROMPT_CHARS: usize = 2_000;
 const MAX_CONTEXT_CHARS: usize = 6_000;
 
+fn openai_error(status: reqwest::StatusCode, body: &Value) -> AppError {
+    let message = body["error"]["message"]
+        .as_str()
+        .or_else(|| body["error"].as_str())
+        .unwrap_or("request failed");
+    if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
+        tracing::warn!(%status, "OpenAI API key was rejected: {message}");
+        return AppError::ServiceUnavailable(
+            "AI story generation is temporarily unavailable because the OpenAI API key was rejected. Update OPENAI_API_KEY and try again.".into(),
+        );
+    }
+    AppError::Upstream(format!("OpenAI error: {message}"))
+}
+
 #[derive(Deserialize)]
 pub struct StoryRequest {
     name: String,
@@ -81,8 +95,7 @@ pub async fn generate_import_story(
     let body: Value = response.json().await
         .map_err(|e| AppError::Upstream(format!("unreadable OpenAI response: {e}")))?;
     if !status.is_success() {
-        let message = body["error"]["message"].as_str().unwrap_or("request failed");
-        return Err(AppError::Upstream(format!("OpenAI error: {message}")));
+        return Err(openai_error(status, &body));
     }
     let story = body["output"].as_array().into_iter().flatten()
         .filter(|item| item["type"] == "message")
@@ -155,9 +168,7 @@ pub async fn generate_story(
         .await
         .map_err(|e| AppError::Upstream(format!("unreadable OpenAI response: {e}")))?;
     if !status.is_success() {
-        let message = body["error"]["message"].as_str().unwrap_or("request failed");
-        tracing::warn!("openai error {status}: {message}");
-        return Err(AppError::Upstream(format!("OpenAI error: {message}")));
+        return Err(openai_error(status, &body));
     }
 
     let mut story = String::new();

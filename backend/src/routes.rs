@@ -1226,10 +1226,13 @@ pub async fn refresh_stories(
             tracing::warn!(person = %person.name, %status, "story refresh rejected: {message}");
             failed += 1;
             failures.push(format!("{}: {status} {message}", person.name));
-            if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+            if status == reqwest::StatusCode::TOO_MANY_REQUESTS
+                || status == reqwest::StatusCode::UNAUTHORIZED
+                || status == reqwest::StatusCode::FORBIDDEN
+            {
                 // A project spend limit or account-wide rate limit affects every
-                // remaining candidate. Stop now, but advance past this failed
-                // record so a scheduled run does not retry it forever.
+                // remaining candidate. An invalid key likewise affects every
+                // request. Stop this batch, but keep the server running.
                 quota_exhausted = true;
                 next_offset = offset + index as i64 + 1;
                 break;
