@@ -945,6 +945,7 @@ pub async fn ingest_recent_deaths(
                 let response = s.http.get(image_url).send().await
                     .map_err(|error| AppError::Internal(error.into()))?;
                 if !response.status().is_success() {
+                    stored_images.push(image_url.clone());
                     continue;
                 }
                 let content_type = response.headers().get("content-type")
@@ -953,10 +954,12 @@ pub async fn ingest_recent_deaths(
                     .split(';').next().unwrap_or("image/jpeg")
                     .to_string();
                 if !content_type.starts_with("image/") {
+                    stored_images.push(image_url.clone());
                     continue;
                 }
                 let bytes = response.bytes().await.map_err(|error| AppError::Internal(error.into()))?;
                 if bytes.len() > 20 * 1024 * 1024 {
+                    stored_images.push(image_url.clone());
                     continue;
                 }
                 let extension = match content_type.as_str() {
@@ -968,6 +971,8 @@ pub async fn ingest_recent_deaths(
                 let key = format!("recent-deaths/{}.{}", Uuid::new_v4(), extension);
                 if let Some(stored_url) = upload_to_r2(&s, &key, &content_type, bytes.to_vec()).await? {
                     stored_images.push(stored_url);
+                } else {
+                    stored_images.push(image_url.clone());
                 }
             }
             candidate.image_urls = stored_images;
