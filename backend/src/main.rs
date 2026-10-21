@@ -112,6 +112,7 @@ async fn main() -> anyhow::Result<()> {
             "/api/admin/people/:id",
             patch(routes::admin_update_person).delete(routes::admin_delete_person),
         )
+        .route("/api/admin/people/:id/fetch-photo", post(routes::admin_fetch_person_photo))
         .route("/api/admin/refresh-stories", post(routes::refresh_stories))
         .route("/api/admin/pending-people", get(routes::pending_people))
         .route(

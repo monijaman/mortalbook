@@ -12,6 +12,7 @@
   let notice = $state('');
   let busy = $state(false);
   let saved = $state('');
+  let fetchingPhoto = $state(false);
   const dirty = $derived(person !== null && JSON.stringify(person) !== saved);
 
   function onKeydown(event) {
@@ -76,6 +77,22 @@
       error = err.message;
     }
   }
+
+  async function fetchPhoto() {
+    fetchingPhoto = true;
+    error = '';
+    notice = '';
+    try {
+      const result = await adminApi(`/api/admin/people/${id}/fetch-photo`, { method: 'POST' });
+      person.photo_url = result.photo_url;
+      saved = JSON.stringify(person);
+      notice = 'Photo found and saved.';
+    } catch (err) {
+      error = err.message || 'No photo was found.';
+    } finally {
+      fetchingPhoto = false;
+    }
+  }
 </script>
 
 <svelte:head>
@@ -118,6 +135,10 @@
       <label><span>Death place</span><input bind:value={person.death_place} maxlength="300" /></label>
     </div>
     <StoryEditor bind:value={person.bio} context={person} />
+    <div class="photo-actions">
+      {#if person.photo_url}<img src={person.photo_url} alt={person.name} />{/if}
+      <button type="button" onclick={fetchPhoto} disabled={fetchingPhoto}>{fetchingPhoto ? 'Searchingâ€¦' : 'Get photo from Wikipedia'}</button>
+    </div>
     <div class="actions">
       <button type="submit" disabled={busy || !dirty}>{busy ? 'Saving…' : 'Save changes (Ctrl+S)'}</button>
       {#if dirty}<span class="muted">Unsaved changes</span>{/if}
@@ -133,6 +154,8 @@
   label span { display: block; margin-bottom: 0.3rem; color: var(--muted); font-size: 0.95rem; }
   .row { display: grid; gap: 1rem; grid-template-columns: 1fr 1fr; }
   .actions { display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; }
+  .photo-actions { display: flex; align-items: center; gap: 1rem; max-width: 680px; }
+  .photo-actions img { width: 96px; height: 72px; object-fit: cover; border-radius: 6px; }
   .danger { background: var(--danger); margin-left: auto; }
   .error { color: var(--danger); }
   .notice { color: var(--accent); }

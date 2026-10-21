@@ -1358,6 +1358,50 @@ pub async fn admin_update_person(
     Ok(Json(json!({ "updated": true })))
 }
 
+pub async fn admin_fetch_person_photo(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Value>, AppError> {
+    require_admin(&headers, &s, true).await?;
+    let person: (String, Option<String>) = sqlx::query_as(
+        "SELECT name, photo_url FROM people WHERE id = $1",
+    )
+    .bind(id)
+    .fetch_optional(&s.db)
+    .await?
+    .ok_or(AppError::NotFound)?;
+
+    let result: Value = s.http.get("https://en.wikipedia.org/w/api.php")
+        .query(&[("action", "query"), ("generator", "search"), ("gsrsearch", person.0.as_str()), ("gsrlimit", "1"), ("prop", "pageimages"), ("piprop", "thumbnail"), ("pithumbsize", "1200"), ("format", "json")])
+        .header("User-Agent", "Mortalbook/1.0 (photo lookup)")
+        .send().await?.error_for_status()?.json().await?;
+    let image_url = result["query"]["pages"].as_object()
+        .and_then(|pages| pages.values().next())
+        .and_then(|page| page["thumbnail"]["source"].as_str())
+        .ok_or_else(|| AppError::NotFound)?
+        .to_string();
+
+    let final_url = if s.r2.is_some() {
+        let response = s.http.get(&image_url)
+            .header("User-Agent", "Mortalbook/1.0 (photo download)")
+            .send().await?.error_for_status()?;
+        let content_type = response.headers().get("content-type")
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or("image/jpeg").split(';').next().unwrap_or("image/jpeg");
+        let bytes = response.bytes().await?;
+        let extension = match content_type { "image/png" => "png", "image/webp" => "webp", _ => "jpg" };
+        let key = format!("people/{}.{}", id, extension);
+        upload_to_r2(&s, &key, content_type, bytes.to_vec()).await?.unwrap_or(image_url)
+    } else {
+        image_url
+    };
+
+    sqlx::query("UPDATE people SET photo_url = $2 WHERE id = $1")
+        .bind(id).bind(&final_url).execute(&s.db).await?;
+    Ok(Json(json!({ "photo_url": final_url })))
+}
+
 pub async fn admin_delete_person(
     State(s): State<AppState>,
     headers: HeaderMap,
