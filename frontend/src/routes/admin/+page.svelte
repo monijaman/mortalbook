@@ -10,6 +10,7 @@
   let error = $state('');
   let notice = $state('');
   let loading = $state(false);
+  let fetching = $state(new Set());
 
   onMount(() => load());
 
@@ -52,6 +53,23 @@
       error = err.message;
     }
   }
+
+  async function fetchPhoto(person) {
+    fetching = new Set(fetching).add(person.id);
+    error = '';
+    notice = '';
+    try {
+      const result = await adminApi(`/api/admin/people/${person.id}/fetch-photo`, { method: 'POST' });
+      person.photo_url = result.photo_url;
+      notice = `Photo saved for ${person.name}.`;
+    } catch (err) {
+      error = `${person.name}: ${err.message || 'No photo found.'}`;
+    } finally {
+      const next = new Set(fetching);
+      next.delete(person.id);
+      fetching = next;
+    }
+  }
 </script>
 
 <svelte:head>
@@ -91,6 +109,9 @@
         <td>{person.occupation ?? '—'}</td>
         <td class="actions">
           <a href={`/admin/people/${person.id}`}>Edit</a>
+          <button type="button" onclick={() => fetchPhoto(person)} disabled={fetching.has(person.id)}>
+            {fetching.has(person.id) ? 'Searching…' : person.photo_url ? 'Replace photo' : 'Get photo'}
+          </button>
           <button type="button" class="danger" onclick={() => remove(person)}>Delete</button>
         </td>
       </tr>

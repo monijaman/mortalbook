@@ -93,6 +93,27 @@
       fetchingPhoto = false;
     }
   }
+
+  async function uploadPhoto(event) {
+    const file = event.currentTarget.files?.[0];
+    if (!file) return;
+    fetchingPhoto = true;
+    error = '';
+    notice = '';
+    try {
+      const form = new FormData();
+      form.append('photo', file);
+      const result = await adminApi(`/api/admin/people/${id}/photo`, { method: 'POST', body: form });
+      person.photo_url = result.photo_url;
+      saved = JSON.stringify(person);
+      notice = 'Photo uploaded and saved.';
+    } catch (err) {
+      error = err.message;
+    } finally {
+      fetchingPhoto = false;
+      event.currentTarget.value = '';
+    }
+  }
 </script>
 
 <svelte:head>
@@ -137,7 +158,8 @@
     <StoryEditor bind:value={person.bio} context={person} />
     <div class="photo-actions">
       {#if person.photo_url}<img src={person.photo_url} alt={person.name} />{/if}
-      <button type="button" onclick={fetchPhoto} disabled={fetchingPhoto}>{fetchingPhoto ? 'Searchingâ€¦' : 'Get photo from Wikipedia'}</button>
+      <label class="upload-photo">Add photo <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" onchange={uploadPhoto} disabled={fetchingPhoto} /></label>
+      <button type="button" onclick={fetchPhoto} disabled={fetchingPhoto}>{fetchingPhoto ? 'Searchingâ€¦' : 'Get photo online'}</button>
     </div>
     <div class="actions">
       <button type="submit" disabled={busy || !dirty}>{busy ? 'Saving…' : 'Save changes (Ctrl+S)'}</button>
@@ -156,6 +178,7 @@
   .actions { display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; }
   .photo-actions { display: flex; align-items: center; gap: 1rem; max-width: 680px; }
   .photo-actions img { width: 96px; height: 72px; object-fit: cover; border-radius: 6px; }
+  .upload-photo { display: inline-flex; align-items: center; gap: 0.5rem; }
   .danger { background: var(--danger); margin-left: auto; }
   .error { color: var(--danger); }
   .notice { color: var(--accent); }

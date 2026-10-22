@@ -602,6 +602,11 @@ async fn create_inner(
             .await?;
     }
     tx.commit().await?;
+    if photo_url.is_none() {
+        if let Err(error) = fetch_person_photo(&s, id, &name).await {
+            tracing::warn!(person = %name, "automatic photo lookup failed after create: {error}");
+        }
+    }
     Ok(Json(json!({ "id": id })))
 }
 
@@ -977,7 +982,10 @@ pub async fn ingest_recent_deaths(
             }
             candidate.image_urls = stored_images;
         }
-        let draft = crate::story::generate_import_story(
+        // Story generation is helpful, but it must not prevent importing a
+        // verified recent-death candidate. If OpenAI is unavailable, keep a
+        // reviewable placeholder and continue processing the batch.
+        let draft = match crate::story::generate_import_story(
             &s,
             &candidate.name,
             candidate.birth_date,
@@ -985,7 +993,17 @@ pub async fn ingest_recent_deaths(
             candidate.occupation.as_deref(),
             candidate.birth_place.as_deref(),
             candidate.death_place.as_deref(),
-        ).await?;
+        ).await {
+            Ok(draft) => draft,
+            Err(error) => {
+                tracing::warn!(
+                    person = %candidate.name,
+                    wikidata_id = %candidate.wikidata_id,
+                    "AI draft generation failed; importing candidate without generated story: {error}"
+                );
+                "AI draft unavailable. Please verify the source information and write a memorial story during review.".to_string()
+            }
+        };
         let public_duplicate: bool = sqlx::query_scalar(
             "SELECT EXISTS (
                 SELECT 1 FROM people
@@ -1047,7 +1065,7 @@ pub async fn ingest_recent_deaths(
                  ) VALUES ($1, $2, $3, $4, $5, 'en', $6, $7, $8, $9,
                     CASE WHEN $3 IS NULL THEN 'year' ELSE 'day' END, 'day')",
             )
-            .bind(person_id)
+    .bind(Uuid::new_v4())
             .bind(&candidate.name)
             .bind(candidate.birth_date)
             .bind(candidate.death_date)
@@ -1358,22 +1376,9 @@ pub async fn admin_update_person(
     Ok(Json(json!({ "updated": true })))
 }
 
-pub async fn admin_fetch_person_photo(
-    State(s): State<AppState>,
-    headers: HeaderMap,
-    Path(id): Path<Uuid>,
-) -> Result<Json<Value>, AppError> {
-    require_admin(&headers, &s, true).await?;
-    let person: (String, Option<String>) = sqlx::query_as(
-        "SELECT name, photo_url FROM people WHERE id = $1",
-    )
-    .bind(id)
-    .fetch_optional(&s.db)
-    .await?
-    .ok_or(AppError::NotFound)?;
-
+async fn fetch_person_photo(s: &AppState, id: Uuid, name: &str) -> Result<String, AppError> {
     let result: Value = s.http.get("https://en.wikipedia.org/w/api.php")
-        .query(&[("action", "query"), ("generator", "search"), ("gsrsearch", person.0.as_str()), ("gsrlimit", "1"), ("prop", "pageimages"), ("piprop", "thumbnail"), ("pithumbsize", "1200"), ("format", "json")])
+        .query(&[("action", "query"), ("generator", "search"), ("gsrsearch", name), ("gsrlimit", "1"), ("prop", "pageimages"), ("piprop", "thumbnail"), ("pithumbsize", "1200"), ("format", "json")])
         .header("User-Agent", "Mortalbook/1.0 (photo lookup)")
         .send().await?.error_for_status()?.json().await?;
     let image_url = result["query"]["pages"].as_object()
@@ -1399,7 +1404,52 @@ pub async fn admin_fetch_person_photo(
 
     sqlx::query("UPDATE people SET photo_url = $2 WHERE id = $1")
         .bind(id).bind(&final_url).execute(&s.db).await?;
-    Ok(Json(json!({ "photo_url": final_url })))
+    Ok(final_url)
+}
+
+pub async fn admin_fetch_person_photo(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Value>, AppError> {
+    require_admin(&headers, &s, true).await?;
+    let name: String = sqlx::query_scalar("SELECT name FROM people WHERE id = $1")
+        .bind(id).fetch_optional(&s.db).await?.ok_or(AppError::NotFound)?;
+    let photo_url = fetch_person_photo(&s, id, &name).await?;
+    Ok(Json(json!({ "photo_url": photo_url })))
+}
+
+pub async fn admin_upload_person_photo(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+    mut mp: Multipart,
+) -> Result<Json<Value>, AppError> {
+    require_admin(&headers, &s, true).await?;
+    let mut field = mp.next_field().await.map_err(bad)?
+        .ok_or_else(|| AppError::BadRequest("select an image".into()))?;
+    let content_type = field.content_type().unwrap_or("").to_string();
+    let (_, extension) = ext_for(&content_type)
+        .filter(|(kind, _)| *kind == "image")
+        .ok_or_else(|| AppError::BadRequest("unsupported image type".into()))?;
+    let bytes = field.bytes().await.map_err(bad)?;
+    if bytes.is_empty() || bytes.len() > 20 * 1024 * 1024 {
+        return Err(AppError::BadRequest("image must be between 1 byte and 20 MB".into()));
+    }
+    let file_name = format!("{}.{}", Uuid::new_v4(), extension);
+    let path = s.upload_dir.join(&file_name);
+    let url = if let Some(stored) = upload_to_r2(&s, &file_name, &content_type, bytes.to_vec()).await? {
+        stored
+    } else {
+        let mut file = fs::File::create(&path).await?;
+        file.write_all(&bytes).await?;
+        file.flush().await?;
+        format!("/uploads/{file_name}")
+    };
+    let updated = sqlx::query("UPDATE people SET photo_url = $2 WHERE id = $1")
+        .bind(id).bind(&url).execute(&s.db).await?;
+    if updated.rows_affected() == 0 { return Err(AppError::NotFound); }
+    Ok(Json(json!({ "photo_url": url })))
 }
 
 pub async fn admin_delete_person(
@@ -1570,6 +1620,7 @@ pub async fn bulk_approve_pending_people(
     }
     let mut tx = s.db.begin().await?;
     let mut published = 0_u64;
+    let mut photo_lookups = Vec::new();
     for id in request.ids {
         let pending = sqlx::query_as::<_, PendingPerson>(
             "SELECT id, wikidata_id, name, birth_date, death_date, bio, occupation,
@@ -1580,18 +1631,28 @@ pub async fn bulk_approve_pending_people(
         if pending.bio.starts_with("Review required:") {
             return Err(AppError::BadRequest(format!("edit {} before making it active", pending.name)));
         }
+        let person_id = Uuid::new_v4();
+        let needs_photo = pending.image_urls.is_empty();
         let result = sqlx::query(
             "INSERT INTO people (id, name, birth_date, death_date, bio, lang, occupation, birth_place, death_place, birth_precision, death_precision)
          SELECT $1, $2, $3, $4, $5, 'en', $9[1], $6, $7, $8, CASE WHEN $3 IS NULL THEN 'year' ELSE 'day' END, 'day'
              WHERE NOT EXISTS (SELECT 1 FROM people WHERE lower(name) = lower($2) AND death_date = $4)",
-        ).bind(Uuid::new_v4()).bind(&pending.name).bind(pending.birth_date)
+        ).bind(person_id).bind(&pending.name).bind(pending.birth_date)
          .bind(pending.death_date).bind(&pending.bio).bind(&pending.occupation)
          .bind(&pending.birth_place).bind(&pending.death_place).bind(&pending.image_urls).execute(&mut *tx).await?;
-        if result.rows_affected() > 0 { published += 1; }
+        if result.rows_affected() > 0 {
+            published += 1;
+            if needs_photo { photo_lookups.push((person_id, pending.name.clone())); }
+        }
         sqlx::query("UPDATE pending_people SET status = 'approved', reviewed_at = now(), updated_at = now() WHERE id = $1")
             .bind(id).execute(&mut *tx).await?;
     }
     tx.commit().await?;
+    for (person_id, name) in photo_lookups {
+        if let Err(error) = fetch_person_photo(&s, person_id, &name).await {
+            tracing::warn!(person = %name, "automatic photo lookup failed after bulk approval: {error}");
+        }
+    }
     Ok(Json(json!({ "published": published })))
 }
 
@@ -1622,6 +1683,8 @@ pub async fn approve_pending_person(
         "{}\n\nSources:\nWikidata: {}\nEnglish Wikipedia: {}",
         pending.bio, pending.wikidata_url, pending.wikipedia_url
     );
+    let person_id = Uuid::new_v4();
+    let has_photo = !pending.image_urls.is_empty();
     sqlx::query(
             "INSERT INTO people (
             id, name, birth_date, death_date, bio, lang, photo_url, occupation, birth_place, death_place,
@@ -1633,7 +1696,7 @@ pub async fn approve_pending_person(
             SELECT 1 FROM people WHERE lower(name) = lower($2) AND death_date = $4
          )",
     )
-    .bind(Uuid::new_v4())
+    .bind(person_id)
     .bind(&pending.name)
     .bind(pending.birth_date)
     .bind(pending.death_date)
@@ -1652,6 +1715,11 @@ pub async fn approve_pending_person(
     .execute(&mut *tx)
     .await?;
     tx.commit().await?;
+    if !has_photo {
+        if let Err(error) = fetch_person_photo(&s, person_id, &pending.name).await {
+            tracing::warn!(person = %pending.name, "automatic photo lookup failed after approval: {error}");
+        }
+    }
     Ok(Json(json!({ "approved": true })))
 }
 
