@@ -947,8 +947,14 @@ pub async fn ingest_recent_deaths(
         if s.r2.is_some() {
             let mut stored_images = Vec::new();
             for image_url in &candidate.image_urls {
-                let response = s.http.get(image_url).send().await
-                    .map_err(|error| AppError::Internal(error.into()))?;
+                let response = match s.http.get(image_url).send().await {
+                    Ok(response) => response,
+                    Err(error) => {
+                        tracing::warn!(url = %image_url, "recent-death image download failed; keeping source URL: {error}");
+                        stored_images.push(image_url.clone());
+                        continue;
+                    }
+                };
                 if !response.status().is_success() {
                     stored_images.push(image_url.clone());
                     continue;
@@ -962,7 +968,14 @@ pub async fn ingest_recent_deaths(
                     stored_images.push(image_url.clone());
                     continue;
                 }
-                let bytes = response.bytes().await.map_err(|error| AppError::Internal(error.into()))?;
+                let bytes = match response.bytes().await {
+                    Ok(bytes) => bytes,
+                    Err(error) => {
+                        tracing::warn!(url = %image_url, "recent-death image read failed; keeping source URL: {error}");
+                        stored_images.push(image_url.clone());
+                        continue;
+                    }
+                };
                 if bytes.len() > 20 * 1024 * 1024 {
                     stored_images.push(image_url.clone());
                     continue;
@@ -974,10 +987,13 @@ pub async fn ingest_recent_deaths(
                     _ => "jpg",
                 };
                 let key = format!("recent-deaths/{}.{}", Uuid::new_v4(), extension);
-                if let Some(stored_url) = upload_to_r2(&s, &key, &content_type, bytes.to_vec()).await? {
-                    stored_images.push(stored_url);
-                } else {
-                    stored_images.push(image_url.clone());
+                match upload_to_r2(&s, &key, &content_type, bytes.to_vec()).await {
+                    Ok(Some(stored_url)) => stored_images.push(stored_url),
+                    Ok(None) => stored_images.push(image_url.clone()),
+                    Err(error) => {
+                        tracing::warn!(url = %image_url, "recent-death image upload failed; keeping source URL: {error:?}");
+                        stored_images.push(image_url.clone());
+                    }
                 }
             }
             candidate.image_urls = stored_images;
