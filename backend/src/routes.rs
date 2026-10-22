@@ -604,7 +604,7 @@ async fn create_inner(
     tx.commit().await?;
     if photo_url.is_none() {
         if let Err(error) = fetch_person_photo(&s, id, &name).await {
-            tracing::warn!(person = %name, "automatic photo lookup failed after create: {error}");
+            tracing::warn!(person = %name, "automatic photo lookup failed after create: {error:?}");
         }
     }
     Ok(Json(json!({ "id": id })))
@@ -999,7 +999,7 @@ pub async fn ingest_recent_deaths(
                 tracing::warn!(
                     person = %candidate.name,
                     wikidata_id = %candidate.wikidata_id,
-                    "AI draft generation failed; importing candidate without generated story: {error}"
+                    "AI draft generation failed; importing candidate without generated story: {error:?}"
                 );
                 "AI draft unavailable. Please verify the source information and write a memorial story during review.".to_string()
             }
@@ -1393,11 +1393,12 @@ async fn fetch_person_photo(s: &AppState, id: Uuid, name: &str) -> Result<String
             .send().await?.error_for_status()?;
         let content_type = response.headers().get("content-type")
             .and_then(|value| value.to_str().ok())
-            .unwrap_or("image/jpeg").split(';').next().unwrap_or("image/jpeg");
+            .unwrap_or("image/jpeg").split(';').next().unwrap_or("image/jpeg")
+            .to_string();
         let bytes = response.bytes().await?;
-        let extension = match content_type { "image/png" => "png", "image/webp" => "webp", _ => "jpg" };
+        let extension = match content_type.as_str() { "image/png" => "png", "image/webp" => "webp", _ => "jpg" };
         let key = format!("people/{}.{}", id, extension);
-        upload_to_r2(&s, &key, content_type, bytes.to_vec()).await?.unwrap_or(image_url)
+        upload_to_r2(&s, &key, &content_type, bytes.to_vec()).await?.unwrap_or(image_url)
     } else {
         image_url
     };
@@ -1651,7 +1652,7 @@ pub async fn bulk_approve_pending_people(
     tx.commit().await?;
     for (person_id, name) in photo_lookups {
         if let Err(error) = fetch_person_photo(&s, person_id, &name).await {
-            tracing::warn!(person = %name, "automatic photo lookup failed after bulk approval: {error}");
+            tracing::warn!(person = %name, "automatic photo lookup failed after bulk approval: {error:?}");
         }
     }
     Ok(Json(json!({ "published": published })))
@@ -1718,7 +1719,7 @@ pub async fn approve_pending_person(
     tx.commit().await?;
     if !has_photo {
         if let Err(error) = fetch_person_photo(&s, person_id, &pending.name).await {
-            tracing::warn!(person = %pending.name, "automatic photo lookup failed after approval: {error}");
+            tracing::warn!(person = %pending.name, "automatic photo lookup failed after approval: {error:?}");
         }
     }
     Ok(Json(json!({ "approved": true })))
