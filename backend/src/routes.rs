@@ -1427,7 +1427,7 @@ pub async fn admin_upload_person_photo(
     mut mp: Multipart,
 ) -> Result<Json<Value>, AppError> {
     require_admin(&headers, &s, true).await?;
-    let mut field = mp.next_field().await.map_err(bad)?
+    let field = mp.next_field().await.map_err(bad)?
         .ok_or_else(|| AppError::BadRequest("select an image".into()))?;
     let content_type = field.content_type().unwrap_or("").to_string();
     let (_, extension) = ext_for(&content_type)
@@ -1593,7 +1593,7 @@ pub async fn upload_pending_images(
     require_admin(&headers, &s, true).await?;
     if s.r2.is_none() { return Err(AppError::ServiceUnavailable("R2 storage is not configured".into())); }
     let mut urls = Vec::new();
-    while let Some(mut field) = mp.next_field().await.map_err(bad)? {
+    while let Some(field) = mp.next_field().await.map_err(bad)? {
         if field.name() != Some("image") { continue; }
         let ct = field.content_type().unwrap_or("").to_string();
         if !ct.starts_with("image/") { return Err(AppError::BadRequest("only image files are supported".into())); }
