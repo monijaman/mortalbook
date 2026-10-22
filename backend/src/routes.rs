@@ -1537,12 +1537,13 @@ pub async fn recent_death_history(
     .fetch_one(&s.db)
     .await?;
     let items = sqlx::query_as::<_, RecentDeathHistoryItem>(
-        "SELECT id, wikidata_id, name, death_date, wikidata_url, wikipedia_url,
-                status, created_at, reviewed_at
-         FROM pending_people
-         WHERE ($1::text IS NULL OR status = $1)
-           AND ($2::text IS NULL OR name ILIKE $2)
-         ORDER BY created_at DESC, name
+        "SELECT pp.id, p.id AS person_id, pp.wikidata_id, pp.name, pp.death_date, pp.wikidata_url, pp.wikipedia_url,
+                pp.status, pp.created_at, pp.reviewed_at
+         FROM pending_people pp
+         LEFT JOIN people p ON lower(p.name) = lower(pp.name) AND p.death_date = pp.death_date
+         WHERE ($1::text IS NULL OR pp.status = $1)
+           AND ($2::text IS NULL OR pp.name ILIKE $2)
+         ORDER BY pp.created_at DESC, pp.name
          LIMIT $3 OFFSET $4",
     )
     .bind(status)

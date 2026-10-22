@@ -57,6 +57,7 @@ pub struct PendingPerson {
 #[derive(Serialize, FromRow)]
 pub struct RecentDeathHistoryItem {
     pub id: Uuid,
+    pub person_id: Option<Uuid>,
     pub wikidata_id: String,
     pub name: String,
     pub death_date: NaiveDate,

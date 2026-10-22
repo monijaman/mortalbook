@@ -11,6 +11,7 @@
   let error = $state('');
   let loading = $state(false);
   let runningCron = $state(false);
+  let fetching = $state(new Set());
 
   onMount(() => load());
 
@@ -53,6 +54,22 @@
   function page(delta) {
     offset = Math.max(0, offset + delta * PAGE);
     load();
+  }
+
+  async function fetchPhoto(item) {
+    if (!item.person_id) return;
+    fetching = new Set(fetching).add(item.id);
+    error = '';
+    try {
+      await adminApi(`/api/admin/people/${item.person_id}/fetch-photo`, { method: 'POST' });
+      item.photo_fetched = true;
+    } catch (err) {
+      error = `${item.name}: ${err.message || 'No photo found.'}`;
+    } finally {
+      const next = new Set(fetching);
+      next.delete(item.id);
+      fetching = next;
+    }
   }
 </script>
 
@@ -109,6 +126,11 @@
           <a href={item.wikipedia_url} target="_blank" rel="noopener noreferrer">Wikipedia</a>
         </td>
         <td>
+          {#if item.person_id}
+            <button type="button" onclick={() => fetchPhoto(item)} disabled={fetching.has(item.id)}>
+              {fetching.has(item.id) ? 'Downloading…' : item.photo_fetched ? 'Downloaded' : 'Get photo'}
+            </button>
+          {/if}
           {#if item.status === 'pending'}
             <a class="edit" href={`/admin/review?edit=${item.id}`}>Edit</a>
           {:else}
