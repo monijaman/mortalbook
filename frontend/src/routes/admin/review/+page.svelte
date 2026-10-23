@@ -93,6 +93,13 @@
     } catch (err) { error = err.message; } finally { busyId = ''; event.currentTarget.value = ''; }
   }
 
+  function setDefaultPhoto(person, index) {
+    const images = [...(person.image_urls || [])];
+    if (!images[index] || index === 0) return;
+    person.image_urls = [images[index], ...images.filter((_, photoIndex) => photoIndex !== index)];
+    notice = `${person.name}'s default photo selected. Save edits to keep it.`;
+  }
+
   async function decide(person, decision) {
     if (decision === 'reject' && !confirm(`Reject ${person.name}?`)) return;
     busyId = person.id;
@@ -187,7 +194,17 @@
         <td><input type="checkbox" aria-label={`Select ${person.name}`} checked={selectedIds.has(person.id)} onchange={() => toggleSelected(person.id)} /></td>
         <td class="name-cell">
           <span>{person.name}</span>
-          <img class="person-photo" src={person.image_urls?.[0] || DEFAULT_IMAGE} alt="" loading="lazy" />
+          <div class="photo-strip">
+            {#if person.image_urls?.length}
+              {#each person.image_urls as image, imageIndex}
+                <button type="button" class:default-photo={imageIndex === 0} class="photo-button" title={imageIndex === 0 ? 'Default photo' : 'Set as default'} onclick={() => setDefaultPhoto(person, imageIndex)}>
+                  <img class="person-photo" src={image} alt={`${person.name} photo ${imageIndex + 1}`} loading="lazy" />
+                </button>
+              {/each}
+            {:else}
+              <img class="person-photo" src={DEFAULT_IMAGE} alt="" loading="lazy" />
+            {/if}
+          </div>
         </td>
         <td>{person.death_date}</td>
         <td>{person.occupation || '—'}</td>
@@ -295,6 +312,9 @@
   .sources { margin: 0.5rem 0 1rem; }
   .name-cell { display: flex; align-items: center; gap: 0.6rem; }
   .person-photo { width: 42px; height: 42px; object-fit: cover; border-radius: 50%; background: var(--photo-placeholder); }
+  .photo-strip { display: flex; gap: 0.3rem; align-items: center; }
+  .photo-button { padding: 0; border: 2px solid transparent; border-radius: 50%; background: transparent; line-height: 0; }
+  .photo-button.default-photo { border-color: var(--accent); }
   .sources a { color: var(--accent); }
   label span { display: block; margin-bottom: 0.3rem; color: var(--muted); }
   .row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
