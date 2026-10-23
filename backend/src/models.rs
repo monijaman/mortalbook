@@ -58,6 +58,7 @@ pub struct PendingPerson {
 pub struct RecentDeathHistoryItem {
     pub id: Uuid,
     pub person_id: Option<Uuid>,
+    pub photo_url: Option<String>,
     pub wikidata_id: String,
     pub name: String,
     pub death_date: NaiveDate,

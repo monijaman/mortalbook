@@ -1,6 +1,7 @@
 <script>
   import { onMount } from 'svelte';
   import { adminApi, logout } from '$lib/admin.js';
+  import { DEFAULT_IMAGE } from '$lib/seo.js';
 
   const PAGE = 25;
   let items = $state([]);
@@ -112,7 +113,10 @@
     {#each items as item (item.id)}
       <tr>
         <td><time datetime={item.created_at}>{new Date(item.created_at).toLocaleString()}</time></td>
-        <td>{item.name}</td>
+        <td class="name-cell">
+          <span>{item.name}</span>
+          <img class="person-photo" src={item.photo_url || DEFAULT_IMAGE} alt="" loading="lazy" />
+        </td>
         <td>{item.death_date}</td>
         <td>
           {item.status}
@@ -158,6 +162,8 @@
   table { width: 100%; border-collapse: collapse; }
   th, td { text-align: left; padding: 0.5rem 0.6rem; border-bottom: 1px solid var(--line); }
   .sources { white-space: nowrap; }
+  .name-cell { display: flex; align-items: center; gap: 0.6rem; }
+  .person-photo { width: 42px; height: 42px; object-fit: cover; border-radius: 50%; background: var(--photo-placeholder); }
   .secondary { background: transparent; color: var(--text); }
   .button { background: var(--accent); color: #fff; padding: 0.45rem 0.9rem; border-radius: 6px; text-decoration: none; }
   .error { color: var(--danger); }
