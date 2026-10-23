@@ -1393,10 +1393,15 @@ pub async fn admin_update_person(
 }
 
 async fn fetch_person_photo(s: &AppState, id: Uuid, name: &str) -> Result<String, AppError> {
-    let result: Value = s.http.get("https://en.wikipedia.org/w/api.php")
+    let response = s.http.get("https://en.wikipedia.org/w/api.php")
         .query(&[("action", "query"), ("generator", "search"), ("gsrsearch", name), ("gsrlimit", "1"), ("prop", "pageimages"), ("piprop", "thumbnail"), ("pithumbsize", "1200"), ("format", "json")])
         .header("User-Agent", "Mortalbook/1.0 (photo lookup)")
-        .send().await?.error_for_status()?.json().await?;
+        .send().await?;
+    if response.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
+        tracing::warn!(person = %name, "Wikipedia rate limit reached; skipping automatic photo lookup");
+        return Err(AppError::NotFound);
+    }
+    let result: Value = response.error_for_status()?.json().await?;
     let image_url = result["query"]["pages"].as_object()
         .and_then(|pages| pages.values().next())
         .and_then(|page| page["thumbnail"]["source"].as_str())
