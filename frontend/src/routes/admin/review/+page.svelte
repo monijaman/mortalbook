@@ -1,6 +1,7 @@
 <script>
   import { onMount } from 'svelte';
   import { adminApi, logout } from '$lib/admin.js';
+  import { DEFAULT_IMAGE } from '$lib/seo.js';
   import StoryEditor from '$lib/StoryEditor.svelte';
 
   let people = $state([]);
@@ -184,7 +185,10 @@
     {#each pagePeople as person (person.id)}
       <tr>
         <td><input type="checkbox" aria-label={`Select ${person.name}`} checked={selectedIds.has(person.id)} onchange={() => toggleSelected(person.id)} /></td>
-        <td>{person.name}</td>
+        <td class="name-cell">
+          <span>{person.name}</span>
+          <img class="person-photo" src={person.image_urls?.[0] || DEFAULT_IMAGE} alt="" loading="lazy" />
+        </td>
         <td>{person.death_date}</td>
         <td>{person.occupation || '—'}</td>
         <td><button type="button" onclick={() => editingId = person.id}>Edit</button></td>
@@ -289,6 +293,8 @@
   .candidate h2 { margin: 0; }
   .candidate-header { display: flex; justify-content: space-between; gap: 1rem; align-items: center; }
   .sources { margin: 0.5rem 0 1rem; }
+  .name-cell { display: flex; align-items: center; gap: 0.6rem; }
+  .person-photo { width: 42px; height: 42px; object-fit: cover; border-radius: 50%; background: var(--photo-placeholder); }
   .sources a { color: var(--accent); }
   label span { display: block; margin-bottom: 0.3rem; color: var(--muted); }
   .row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
