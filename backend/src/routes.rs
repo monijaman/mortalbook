@@ -1081,7 +1081,7 @@ pub async fn ingest_recent_deaths(
                  ) VALUES ($1, $2, $3, $4, $5, 'en', $6, $7, $8, $9,
                     CASE WHEN $3 IS NULL THEN 'year' ELSE 'day' END, 'day')",
             )
-    .bind(Uuid::new_v4())
+    .bind(person_id)
             .bind(&candidate.name)
             .bind(candidate.birth_date)
             .bind(candidate.death_date)
